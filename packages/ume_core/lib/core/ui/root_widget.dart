@@ -290,7 +290,8 @@ class _ContentPageState extends State<_ContentPage> {
           height: 30,
           width: 30);
     }
-    return FlutterLogo(size: 40, colors: _showedMenu ? Colors.red : null);
+    return Icon(Icons.bug_report,
+        size: 26, color: _showedMenu ? Colors.red : Colors.black87);
   }
 
   @override
