@@ -1,0 +1,25 @@
+name: ume2_kit_device
+description: Fork of ume_kit_device (device info kit for UME) that runs on ume2_core.
+version: 2.0.4
+homepage: https://github.com/insightop/ume
+repository: https://github.com/duythien0912/ume/tree/ume2/ume2/ume2_kit_device
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  battery_plus: ^6.2.0
+  connectivity_plus: ^6.1.0
+  network_info_plus: ^6.1.1
+  package_info_plus: ^8.1.1
+  device_info_plus: ^11.1.1
+  system_info2: ^4.0.0
+  share_plus: ^11.0.0
+  platform: ^3.0.0
+  ume2_core: ^2.0.3
+
+flutter:
+  uses-material-design: true

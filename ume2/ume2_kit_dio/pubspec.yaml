@@ -1,0 +1,15 @@
+name: ume2_kit_dio
+description: Fork of ume_kit_dio (Dio request inspector kit for UME) that runs on ume2_core.
+version: 2.0.3
+homepage: https://github.com/insightop/ume
+repository: https://github.com/duythien0912/ume/tree/ume2/ume2/ume2_kit_dio
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.7.0
+  ume2_core: ^2.0.3

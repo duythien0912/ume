@@ -1,0 +1,21 @@
+name: ume2_core
+description: Fork of ume_core (UME in-app debug kits for Flutter) with a smaller floating button and a bug icon.
+version: 2.0.4
+homepage: https://github.com/insightop/ume
+repository: https://github.com/duythien0912/ume/tree/ume2/ume2/ume2_core
+topics: [debug, in-app-debug, ume]
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  shared_preferences: ^2.3.3
+  vm_service: ^15.0.0
+  tuple: ^2.0.0
+
+flutter:
+  uses-material-design: true
