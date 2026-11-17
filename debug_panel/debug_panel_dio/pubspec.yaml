@@ -1,0 +1,15 @@
+name: debug_panel_dio
+description: "Dio network inspector tool for debug_panel_core: browse requests and copy them as text or cURL."
+version: 1.0.0
+repository: https://github.com/duythien0912/ume/tree/debug-panel/debug_panel/debug_panel_dio
+topics: [debug, dio, network, devtools]
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.7.0
+  debug_panel_core: ^1.0.0

@@ -1,0 +1,25 @@
+name: debug_panel_device
+description: "Device info tool for debug_panel_core: system, network, battery, package and platform details."
+version: 1.0.0
+repository: https://github.com/duythien0912/ume/tree/debug-panel/debug_panel/debug_panel_device
+topics: [debug, device-info, devtools]
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  battery_plus: ^6.2.0
+  connectivity_plus: ^6.1.0
+  network_info_plus: ^6.1.1
+  package_info_plus: ^8.1.1
+  device_info_plus: ^11.1.1
+  system_info2: ^4.0.0
+  share_plus: ^11.0.0
+  platform: ^3.0.0
+  debug_panel_core: ^1.0.0
+
+flutter:
+  uses-material-design: true

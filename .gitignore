@@ -89,3 +89,4 @@ Podfile.lock
 Pods/
 .swiftpm/
 .symlinks/
+pubspec_overrides.yaml

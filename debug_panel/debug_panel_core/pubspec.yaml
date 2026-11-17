@@ -1,0 +1,20 @@
+name: debug_panel_core
+description: "In-app debug panel for Flutter: a draggable button that opens a tool menu, with a plugin API for your own tools."
+version: 1.0.0
+repository: https://github.com/duythien0912/ume/tree/debug-panel/debug_panel/debug_panel_core
+topics: [debug, in-app-debug, devtools]
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  shared_preferences: ^2.3.3
+  vm_service: ^15.0.0
+  tuple: ^2.0.0
+
+flutter:
+  uses-material-design: true
