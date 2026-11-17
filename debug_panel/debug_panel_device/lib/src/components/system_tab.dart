@@ -4,6 +4,12 @@ import 'tab_template.dart';
 
 class SystemTab extends TabTemplate {
   const SystemTab({super.key});
+
+  @override
+  String get title => 'System';
+
+  @override
+  bool get initiallyOpen => true;
   @override
   Future<List<ListTileItem>> getItemList() async {
     final systemInfo = await DeviceInfoPlugin().deviceInfo;

@@ -16,11 +16,6 @@ abstract class PluggableWithStream extends Pluggable {
   StreamFilter get streamFilter;
 }
 
-/// A tool that draws its own close button (calling
-/// `DebugPanel.closeActivatedPlugin`), so the floating button hides while it
-/// is open.
-abstract class PluggableWithCloseButton extends Pluggable {}
-
 abstract class PluggableWithNestedWidget extends Pluggable {
   Widget buildNestedWidget(Widget child);
 }

@@ -12,7 +12,7 @@ import 'widgets/icon.dart' as icon;
 import 'widgets/pluggable_state.dart';
 
 /// Implement a [Pluggable] to integrate with the debug panel.
-class DioInspector extends StatefulWidget implements PluggableWithCloseButton {
+class DioInspector extends StatefulWidget implements Pluggable {
   DioInspector({Key? key, required this.dio}) : super(key: key) {
     dio.interceptors.add(DebugPanelDioInterceptor());
   }

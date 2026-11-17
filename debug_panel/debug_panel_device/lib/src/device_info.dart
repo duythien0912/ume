@@ -15,7 +15,7 @@ const cpuIconData =
 
 final iconBytes = base64Decode(cpuIconData);
 
-class DeviceInfo extends StatefulWidget implements PluggableWithCloseButton {
+class DeviceInfo extends StatefulWidget implements Pluggable {
   @override
   _DeviceInfoState createState() => _DeviceInfoState();
 
@@ -36,48 +36,77 @@ class DeviceInfo extends StatefulWidget implements PluggableWithCloseButton {
 }
 
 class _DeviceInfoState extends State<DeviceInfo> {
-  static const tabs = <Tab>[
-    Tab(text: 'System'),
-    Tab(text: 'Network'),
-    Tab(text: 'Battery'),
-    Tab(text: 'App'),
-    Tab(text: 'Platform'),
-    Tab(text: 'Licenses'),
-  ];
+  bool _licenses = false;
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: tabs.length,
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: const Text('Device info'),
-          actions: const <Widget>[
-            DebugPanelIconButton(
-              icon: Icons.close_rounded,
-              tooltip: 'Close',
-              onPressed: DebugPanel.closeActivatedPlugin,
-            ),
-            SizedBox(width: 12),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            tabs: tabs,
+    // Both stay built, so open sections survive a trip to Licenses.
+    return IndexedStack(
+      index: _licenses ? 1 : 0,
+      children: <Widget>[_sections(context), _licensesView()],
+    );
+  }
+
+  Widget _licensesView() {
+    if (!_licenses) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _licenses = false),
+            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            label: const Text('Device info'),
+            style: TextButton.styleFrom(foregroundColor: DebugPanelColors.text),
           ),
         ),
-        body: const TabBarView(
-          children: [
-            SystemTab(),
-            NetworkTab(),
-            BatteryTab(),
-            PackageTab(),
-            PlatformTab(),
-            CopyrightTab(),
-          ],
-        ),
+        const Divider(),
+        const Expanded(child: CopyrightTab()),
+      ],
+    );
+  }
+
+  Widget _sections(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.only(
+        top: 4,
+        bottom: MediaQuery.paddingOf(context).bottom + 8,
       ),
+      children: <Widget>[
+        const SystemTab(),
+        const PackageTab(),
+        const NetworkTab(),
+        const BatteryTab(),
+        const PlatformTab(),
+        InkWell(
+          onTap: () => setState(() => _licenses = true),
+          child: const SizedBox(
+            height: 40,
+            child: Padding(
+              padding: EdgeInsets.only(left: 8, right: 12),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: DebugPanelColors.textMuted,
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    'Licenses',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: DebugPanelColors.text,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

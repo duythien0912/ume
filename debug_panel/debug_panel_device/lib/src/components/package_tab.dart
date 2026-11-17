@@ -6,6 +6,12 @@ class PackageTab extends TabTemplate {
   const PackageTab({super.key});
 
   @override
+  String get title => 'App';
+
+  @override
+  bool get initiallyOpen => true;
+
+  @override
   Future<List<ListTileItem>> getItemList() async {
     final packageInfo = await PackageInfo.fromPlatform();
     return [

@@ -11,6 +11,12 @@ const int _maxPrettyChars = 512 * 1024;
 class RequestText {
   RequestText(this.response);
 
+  static final Expando<RequestText> _cache = Expando<RequestText>();
+
+  /// One shared instance per response, so text is formatted only once.
+  static RequestText of(Response<dynamic> response) =>
+      _cache[response] ??= RequestText(response);
+
   final Response<dynamic> response;
 
   RequestOptions get _request => response.requestOptions;
@@ -22,12 +28,17 @@ class RequestText {
 
   Uri get uri => _request.uri;
 
-  late final String? requestHeaders = _headerLines(_request.headers);
+  late final List<MapEntry<String, String>> requestHeaderEntries =
+      _headerEntries(_request.headers);
+
+  late final List<MapEntry<String, String>> responseHeaderEntries =
+      _headerEntries(response.headers.map);
+
+  late final String? requestHeaders = _headerLines(requestHeaderEntries);
 
   late final String? requestBody = formatBody(_request.data);
 
-  late final String? responseHeaders =
-      response.headers.isEmpty ? null : _headerLines(response.headers.map);
+  late final String? responseHeaders = _headerLines(responseHeaderEntries);
 
   late final String? responseBody = formatBody(response.data);
 
@@ -49,16 +60,19 @@ class RequestText {
         parts.add('-F ${_quote('${field.key}=${field.value}')}');
       }
       for (final file in data.files) {
-        parts.add('-F ${_quote('${file.key}=@${file.value.filename ?? 'file'}')}');
+        parts.add(
+          '-F ${_quote('${file.key}=@${file.value.filename ?? 'file'}')}',
+        );
       }
     } else if (data != null) {
-      final urlEncoded = (_request.contentType ?? '')
-          .contains(Headers.formUrlEncodedContentType);
+      final urlEncoded = (_request.contentType ?? '').contains(
+        Headers.formUrlEncodedContentType,
+      );
       final body = data is String
           ? data
           : urlEncoded && data is Map<String, dynamic>
-              ? Transformer.urlEncodeMap(data, _request.listFormat)
-              : _tryJson(data) ?? '$data';
+          ? Transformer.urlEncodeMap(data, _request.listFormat)
+          : _tryJson(data) ?? '$data';
       parts.add('--data-raw ${_quote(body)}');
     }
     return parts.join(' \\\n  ');
@@ -96,9 +110,36 @@ class RequestText {
   String statusLabel() {
     final code = statusCode;
     final message = response.statusMessage;
-    if (code == null) return 'No response${message == null ? '' : ': $message'}';
-    return message == null || message.isEmpty ? '$code' : '$code $message';
+    if (code == null)
+      return 'No response${message == null ? '' : ': $message'}';
+    final reason = message == null || message.isEmpty
+        ? _reasons[code]
+        : message;
+    return reason == null ? '$code' : '$code $reason';
   }
+
+  static const Map<int, String> _reasons = <int, String>{
+    200: 'OK',
+    201: 'Created',
+    202: 'Accepted',
+    204: 'No Content',
+    301: 'Moved Permanently',
+    302: 'Found',
+    304: 'Not Modified',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    408: 'Request Timeout',
+    409: 'Conflict',
+    422: 'Unprocessable Entity',
+    429: 'Too Many Requests',
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout',
+  };
 
   static String? formatBody(Object? data) {
     if (data == null) return null;
@@ -132,13 +173,18 @@ class RequestText {
     }
   }
 
-  static String? _headerLines(Map<String, dynamic> headers) {
-    final lines = <String>[
-      for (final entry in headers.entries)
-        if (entry.value != null) '${entry.key}: ${_headerValue(entry.value)}',
-    ];
-    return lines.isEmpty ? null : lines.join('\n');
-  }
+  static List<MapEntry<String, String>> _headerEntries(
+    Map<String, dynamic> headers,
+  ) => <MapEntry<String, String>>[
+    for (final entry in headers.entries)
+      if (entry.value != null)
+        MapEntry<String, String>(entry.key, _headerValue(entry.value)),
+  ];
+
+  static String? _headerLines(List<MapEntry<String, String>> entries) =>
+      entries.isEmpty
+      ? null
+      : entries.map((e) => '${e.key}: ${e.value}').join('\n');
 
   static String _headerValue(Object value) =>
       value is Iterable ? value.join(', ') : '$value';

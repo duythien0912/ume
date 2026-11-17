@@ -6,6 +6,9 @@ class PlatformTab extends TabTemplate {
   const PlatformTab({super.key});
 
   @override
+  String get title => 'Platform';
+
+  @override
   Future<List<ListTileItem>> getItemList() async {
     return [
       ListTileItem(

@@ -8,9 +8,13 @@ class ListTileItem {
   const ListTileItem({required this.title, required this.subtitle});
 }
 
-/// A tab that loads a list of label and value rows once and shows them.
+/// A section that opens and closes; its rows load the first time it opens.
 abstract class TabTemplate extends StatefulWidget {
   const TabTemplate({super.key});
+
+  String get title;
+
+  bool get initiallyOpen => false;
 
   Future<List<ListTileItem>> getItemList();
 
@@ -18,64 +22,90 @@ abstract class TabTemplate extends StatefulWidget {
   State<TabTemplate> createState() => _TabTemplateState();
 }
 
-class _TabTemplateState extends State<TabTemplate>
-    with AutomaticKeepAliveClientMixin {
-  late final Future<List<ListTileItem>> _items = widget.getItemList();
-
-  @override
-  bool get wantKeepAlive => true;
+class _TabTemplateState extends State<TabTemplate> {
+  late bool _open = widget.initiallyOpen;
+  Future<List<ListTileItem>>? _items;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
+    if (_open) _items ??= widget.getItemList();
     return FutureBuilder<List<ListTileItem>>(
       future: _items,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _Message('Could not read this info:\n${snapshot.error}');
-        }
         final items = snapshot.data;
-        if (items == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (items.isEmpty) return const _Message('Nothing to show');
-        return ListView.separated(
-          padding: EdgeInsets.only(
-            top: 4,
-            bottom: MediaQuery.paddingOf(context).bottom + 16,
-          ),
-          itemCount: items.length + 1,
-          separatorBuilder: (_, index) => index == 0
-              ? const SizedBox.shrink()
-              : const Divider(height: 1, indent: 16, endIndent: 16),
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '${items.length} items',
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            InkWell(
+              // Closing drops the result, so reopening reads fresh values.
+              onTap: () => setState(() {
+                _open = !_open;
+                if (!_open) _items = null;
+              }),
+              child: SizedBox(
+                height: 40,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 12),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        _open
+                            ? Icons.expand_more_rounded
+                            : Icons.chevron_right_rounded,
+                        size: 20,
+                        color: DebugPanelColors.textMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.title,
                         style: const TextStyle(
-                          fontSize: 13,
-                          color: DebugPanelColors.textMuted,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: DebugPanelColors.text,
                         ),
                       ),
-                    ),
-                    DebugPanelCopyAction(
-                      icon: Icons.copy_all_rounded,
-                      label: 'Copy all',
-                      text: () => items
-                          .map((e) => '${e.title}: ${e.subtitle}')
-                          .join('\n'),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      if (items != null)
+                        Text(
+                          '${items.length}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: DebugPanelColors.textMuted,
+                          ),
+                        ),
+                      const Spacer(),
+                      if (_open && items != null && items.isNotEmpty)
+                        DebugPanelCopyButton(
+                          tooltip: 'Copy ${widget.title.toLowerCase()} info',
+                          size: 15,
+                          dense: true,
+                          text: () => items
+                              .map((e) => '${e.title}: ${e.subtitle}')
+                              .join('\n'),
+                        ),
+                    ],
+                  ),
                 ),
-              );
-            }
-            return _Row(item: items[index - 1]);
-          },
+              ),
+            ),
+            if (_open)
+              if (snapshot.hasError)
+                _Message('Could not read this info: ${snapshot.error}')
+              else if (items == null)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              else if (items.isEmpty)
+                const _Message('Nothing to show')
+              else
+                for (final item in items) _Row(item: item),
+          ],
         );
       },
     );
@@ -89,47 +119,75 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  item.title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: DebugPanelColors.textMuted,
-                  ),
+    return InkWell(
+      onTap: () => debugPanelCopy(
+        context,
+        '${item.title}: ${item.subtitle}',
+        message: 'Copied ${humanize(item.title)}',
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(32, 5, 12, 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              flex: 2,
+              child: Text(
+                humanize(item.title),
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: DebugPanelColors.textMuted,
+                  height: 1.4,
                 ),
-                const SizedBox(height: 3),
-                if (item.subtitle.isEmpty)
-                  Text(
-                    'Empty',
-                    style: debugPanelMonoStyle.copyWith(
-                      color: DebugPanelColors.textMuted,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  )
-                else
-                  SelectableText(item.subtitle, style: debugPanelMonoStyle),
-              ],
+              ),
             ),
-          ),
-          if (item.subtitle.isNotEmpty)
-            DebugPanelCopyButton(
-            tooltip: 'Copy ${item.title}',
-            text: () => '${item.title}: ${item.subtitle}',
-            size: 18,
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 3,
+              child: Text(
+                item.subtitle.isEmpty ? '—' : item.subtitle,
+                style: debugPanelMonoStyle,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+const Map<String, String> _acronyms = <String, String>{
+  'os': 'OS',
+  'cpu': 'CPU',
+  'cpus': 'CPUs',
+  'id': 'ID',
+  'ip': 'IP',
+  'url': 'URL',
+  'sdk': 'SDK',
+  'ssid': 'SSID',
+  'bssid': 'BSSID',
+  'abi': 'ABI',
+  'abis': 'ABIs',
+};
+
+/// "systemGUID" → "System GUID", "Platform Version" → "Platform version".
+String humanize(String key) {
+  final words = key
+      .replaceAll('_', ' ')
+      .split(RegExp(r'(?<=[a-z0-9])(?=[A-Z])|\s+'))
+      .where((w) => w.isNotEmpty)
+      .toList();
+  if (words.isEmpty) return key;
+  return <String>[
+    for (var i = 0; i < words.length; i++)
+      words[i] == words[i].toUpperCase() && words[i].length > 1
+          ? words[i]
+          : _acronyms.containsKey(words[i].toLowerCase())
+              ? _acronyms[words[i].toLowerCase()]!
+              : i == 0
+                  ? '${words[i][0].toUpperCase()}${words[i].substring(1).toLowerCase()}'
+                  : words[i].toLowerCase(),
+  ].join(' ');
 }
 
 class _Message extends StatelessWidget {
@@ -139,14 +197,11 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: DebugPanelColors.textMuted),
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 4, 12, 10),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 12, color: DebugPanelColors.textMuted),
       ),
     );
   }

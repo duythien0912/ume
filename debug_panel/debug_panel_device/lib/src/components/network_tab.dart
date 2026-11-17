@@ -7,6 +7,9 @@ class NetworkTab extends TabTemplate {
   const NetworkTab({super.key});
 
   @override
+  String get title => 'Network';
+
+  @override
   Future<List<ListTileItem>> getItemList() async {
     final info = NetworkInfo();
     final connectivity = Connectivity().checkConnectivity();

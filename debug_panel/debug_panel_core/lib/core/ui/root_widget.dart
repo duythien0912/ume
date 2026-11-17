@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:debug_panel_core/core/pluggable_message_service.dart';
-import 'package:debug_panel_core/core/ui/panel_action_define.dart';
 import 'package:debug_panel_core/core/plugin_manager.dart';
 import 'package:debug_panel_core/core/red_dot.dart';
 import 'package:debug_panel_core/core/store_manager.dart';
+import 'package:debug_panel_core/core/ui/panel_shell.dart';
 import 'package:debug_panel_core/core/ui/theme.dart';
-import 'package:debug_panel_core/core/ui/toolbar_widget.dart';
 import 'package:debug_panel_core/core/pluggable.dart';
 import 'package:debug_panel_core/util/binding_ambiguate.dart';
 import 'package:debug_panel_core/util/constants.dart';
-import './menu_page.dart';
 import 'global.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -29,6 +27,7 @@ class DebugPanel extends StatefulWidget {
     this.enable = true,
     this.supportedLocales,
     this.localizationsDelegates = defaultLocalizationsDelegates,
+    this.initialTool = 'DioInspector',
   }) : super(key: key);
 
   final Widget child;
@@ -36,16 +35,16 @@ class DebugPanel extends StatefulWidget {
   final Iterable<Locale>? supportedLocales;
   final Iterable<LocalizationsDelegate> localizationsDelegates;
 
-  /// Close the activated plugin if any.
+  /// [Pluggable.name] of the tool shown the first time the panel opens (the
+  /// first registered tool when none has that name); later opens show the
+  /// last used tool.
+  final String? initialTool;
+
+  /// Close the panel and the activated plugin, if any.
   ///
-  /// The method does not have side-effects whether the [DebugPanel]
-  /// is not enabled or no plugin has been activated.
+  /// Does nothing when the [DebugPanel] is not enabled or nothing is open.
   static void closeActivatedPlugin() {
-    final _ContentPageState? state =
-        _debugPanelState?._contentPageKey.currentState;
-    if (state?._currentSelected != null) {
-      state?._closeActivatedPluggable();
-    }
+    _debugPanelState?._contentPageKey.currentState?._close();
   }
 
   @override
@@ -139,6 +138,7 @@ class _DebugPanelState extends State<DebugPanel> {
               type: MaterialType.transparency,
               child: _ContentPage(
                 key: _contentPageKey,
+                initialTool: widget.initialTool,
                 refreshChildLayout: () => setState(() {}),
               ),
             ),
@@ -153,8 +153,9 @@ class _DebugPanelState extends State<DebugPanel> {
   @override
   Widget build(BuildContext context) {
     Widget layout = _buildLayout(context);
-    final activated = PluginManager.instance.pluginsMap[
-        PluginManager.instance.activatedPluggableName];
+    final activated = PluginManager
+        .instance
+        .pluginsMap[PluginManager.instance.activatedPluggableName];
     if (activated is PluggableWithNestedWidget) {
       layout = activated.buildNestedWidget(layout);
     }
@@ -163,8 +164,10 @@ class _DebugPanelState extends State<DebugPanel> {
 }
 
 class _ContentPage extends StatefulWidget {
-  const _ContentPage({Key? key, this.refreshChildLayout}) : super(key: key);
+  const _ContentPage({Key? key, this.initialTool, this.refreshChildLayout})
+    : super(key: key);
 
+  final String? initialTool;
   final VoidCallback? refreshChildLayout;
 
   @override
@@ -172,19 +175,19 @@ class _ContentPage extends StatefulWidget {
 }
 
 class _ContentPageState extends State<_ContentPage> {
-  PluginStoreManager _storeManager = PluginStoreManager();
+  final PluginStoreManager _storeManager = PluginStoreManager();
   Size _windowSize = windowSize;
   double _dx = 0;
   double _dy = 0;
-  bool _showedMenu = false;
-  Pluggable? _currentSelected;
-  Widget _empty = Container();
-  Widget? _currentWidget;
-  Widget? _menuPage;
-  BuildContext? _context;
 
-  bool _minimalContent = true;
-  Widget? _toolbarWidget;
+  /// Tools in bottom bar order; filled when the panel first opens.
+  List<Pluggable> _tools = const <Pluggable>[];
+  int _selected = 0;
+  bool _panelOpen = false;
+
+  /// A [PluggableWithNestedWidget] wraps the app, so it runs with the panel
+  /// closed and the floating button closes it.
+  Pluggable? _nestedTool;
 
   void dragEvent(DragUpdateDetails details) {
     _dx = details.globalPosition.dx - dotSize.width / 2;
@@ -209,56 +212,84 @@ class _ContentPageState extends State<_ContentPage> {
     setState(() {});
   }
 
-  void onTap() {
-    if (_currentSelected != null) {
-      _closeActivatedPluggable();
+  List<Pluggable> _orderedTools() {
+    final tools = PluginManager.instance.pluginsMap.values
+        .whereType<Pluggable>()
+        .toList();
+    final initial = tools.indexWhere((t) => t.name == widget.initialTool);
+    if (initial > 0) tools.insert(0, tools.removeAt(initial));
+    return tools;
+  }
+
+  void _onDotTap() {
+    if (_nestedTool != null) {
+      _close();
       return;
     }
-    _showedMenu = !_showedMenu;
-    _updatePanelWidget();
+    final tools = _orderedTools();
+    if (tools.isEmpty) return;
+    // Keep the last tool across openings while the tool list is unchanged.
+    final keep =
+        _selected < _tools.length &&
+        _selected < tools.length &&
+        _tools[_selected].name == tools[_selected].name;
+    _tools = tools;
+    final first = tools.indexWhere(_opensInPanel);
+    if (first < 0) return;
+    _panelOpen = true;
+    _select(keep && _opensInPanel(tools[_selected]) ? _selected : first);
   }
 
-  void _closeActivatedPluggable() {
-    PluginManager.instance.deactivatePluggable(_currentSelected!);
-    if (widget.refreshChildLayout != null) {
-      widget.refreshChildLayout!();
+  static bool _opensInPanel(Pluggable tool) =>
+      tool is! PluggableWithAnywhereDoor && tool is! PluggableWithNestedWidget;
+
+  Future<void> _select(int index) async {
+    final tool = _tools[index];
+    if (tool is PluggableWithAnywhereDoor) {
+      _close();
+      dynamic result;
+      if (tool.routeNameAndArgs != null) {
+        result = await tool.navigator?.pushNamed(
+          tool.routeNameAndArgs!.item1,
+          arguments: tool.routeNameAndArgs!.item2,
+        );
+      } else if (tool.route != null) {
+        result = await tool.navigator?.push(tool.route!);
+      }
+      tool.popResultReceive(result);
+      return;
     }
-    _currentSelected = null;
-    _currentWidget = _empty;
-    if (_minimalContent) {
-      _currentWidget = _toolbarWidget;
-      _showedMenu = true;
+    if (tool is PluggableWithNestedWidget) {
+      _close();
+      _nestedTool = tool;
+      PluginManager.instance.activatePluggable(tool);
+      widget.refreshChildLayout?.call();
+      tool.onTrigger();
+      setState(() {});
+      return;
     }
-    setState(() {});
-  }
-
-  void _updatePanelWidget() {
-    setState(() {
-      _currentWidget = _showedMenu
-          ? (_minimalContent ? _toolbarWidget : _menuPage)
-          : _empty;
-    });
-  }
-
-  void _handleAction(BuildContext? context, Pluggable data) {
-    _currentWidget = data.buildWidget(context);
-    setState(() {
-      _showedMenu = false;
-    });
-  }
-
-  Widget _logoWidget() {
-    final pluginOpen = _currentSelected != null;
-    return Icon(
-      pluginOpen ? Icons.close_rounded : Icons.bug_report_rounded,
-      size: 22,
-      color: Colors.white,
-    );
+    PluggableMessageService().resetCounter(tool);
+    setState(() => _selected = index);
+    PluginManager.instance.activatePluggable(tool);
+    tool.onTrigger();
   }
 
   @override
   void dispose() {
+    // Don't leave a tool wrapping the app once the panel is gone.
+    final active = _nestedTool ?? (_panelOpen ? _tools[_selected] : null);
+    if (active != null) PluginManager.instance.deactivatePluggable(active);
     super.dispose();
+  }
+
+  void _close() {
+    final active = _nestedTool ?? (_panelOpen ? _tools[_selected] : null);
+    if (active != null) PluginManager.instance.deactivatePluggable(active);
+    if (_nestedTool != null) {
+      _nestedTool = null;
+      widget.refreshChildLayout?.call();
+    }
+    if (mounted) setState(() => _panelOpen = false);
   }
 
   @override
@@ -270,7 +301,8 @@ class _ContentPageState extends State<_ContentPage> {
       }
       final x = double.parse(value.split(',').first);
       final y = double.parse(value.split(',').last);
-      if (MediaQuery.of(context).size.height - dotSize.height < y ||
+      if (!mounted ||
+          MediaQuery.of(context).size.height - dotSize.height < y ||
           MediaQuery.of(context).size.width - dotSize.width < x) {
         return;
       }
@@ -278,91 +310,41 @@ class _ContentPageState extends State<_ContentPage> {
       _dy = y;
       setState(() {});
     });
-    _storeManager.fetchMinimalToolbarSwitch().then((value) {
-      setState(() {
-        _minimalContent = value ?? true;
-      });
-    });
     _dx = _windowSize.width - dotSize.width - margin * 4;
     _dy = _windowSize.height - dotSize.height - bottomDistance;
-    MenuAction itemTapAction = (pluginData) async {
-      if (pluginData is PluggableWithAnywhereDoor) {
-        dynamic result;
-        if (pluginData.routeNameAndArgs != null) {
-          result = await pluginData.navigator?.pushNamed(
-            pluginData.routeNameAndArgs!.item1,
-            arguments: pluginData.routeNameAndArgs!.item2,
-          );
-        } else if (pluginData.route != null) {
-          result = await pluginData.navigator?.push(pluginData.route!);
-        }
-        pluginData.popResultReceive(result);
-      } else {
-        _currentSelected = pluginData;
-        if (_currentSelected != null) {
-          PluginManager.instance.activatePluggable(_currentSelected!);
-        }
-        _handleAction(_context, pluginData!);
-        if (widget.refreshChildLayout != null) {
-          widget.refreshChildLayout!();
-        }
-        pluginData.onTrigger();
-      }
-    };
-    _menuPage = MenuPage(
-      action: itemTapAction,
-      minimalAction: () {
-        _minimalContent = true;
-        _updatePanelWidget();
-        PluginStoreManager().storeMinimalToolbarSwitch(true);
-      },
-      closeAction: () {
-        _showedMenu = false;
-        _updatePanelWidget();
-      },
-    );
-    _toolbarWidget = ToolBarWidget(
-      action: itemTapAction,
-      maximalAction: () {
-        _minimalContent = false;
-        _updatePanelWidget();
-        PluginStoreManager().storeMinimalToolbarSwitch(false);
-      },
-      closeAction: () {
-        _showedMenu = false;
-        _updatePanelWidget();
-      },
-    );
-    _currentWidget = _empty;
   }
 
   @override
   Widget build(BuildContext context) {
-    _context = context;
     if (_windowSize.isEmpty) {
       _dx = MediaQuery.of(context).size.width - dotSize.width - margin * 4;
       _dy =
           MediaQuery.of(context).size.height - dotSize.height - bottomDistance;
       _windowSize = MediaQuery.of(context).size;
     }
-    return Container(
+    final nestedOpen = _nestedTool != null;
+    return SizedBox(
       width: _windowSize.width,
       height: _windowSize.height,
       child: Stack(
-        alignment: Alignment.center,
         children: <Widget>[
-          _currentWidget!,
-          // Panels and tools with their own close button hide the dot.
-          if (!_showedMenu && _currentSelected is! PluggableWithCloseButton)
+          if (_panelOpen)
+            Positioned.fill(
+              child: PanelShell(
+                tools: _tools,
+                selected: _selected,
+                onSelect: _select,
+                onClose: _close,
+              ),
+            ),
+          if (!_panelOpen)
             Positioned(
               left: _dx,
               top: _dy,
               child: Tooltip(
-                message: _currentSelected != null
-                    ? 'Close tool'
-                    : 'Open debug panel',
+                message: nestedOpen ? 'Close tool' : 'Open debug panel',
                 child: GestureDetector(
-                  onTap: onTap,
+                  onTap: _onDotTap,
                   onVerticalDragEnd: dragEnd,
                   onHorizontalDragEnd: dragEnd,
                   onHorizontalDragUpdate: dragEvent,
@@ -370,13 +352,16 @@ class _ContentPageState extends State<_ContentPage> {
                   child: Container(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: _currentSelected != null
+                      color: nestedOpen
                           ? DebugPanelColors.accent
                           : DebugPanelColors.fab,
-                      border: Border.all(color: Colors.white, width: 2),
+                      border: Border.all(
+                        color: DebugPanelColors.accent,
+                        width: 2,
+                      ),
                       boxShadow: const <BoxShadow>[
                         BoxShadow(
-                          color: Color(0x40000000),
+                          color: Color(0x59000000),
                           offset: Offset(0, 4),
                           blurRadius: 12,
                         ),
@@ -387,7 +372,15 @@ class _ContentPageState extends State<_ContentPage> {
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Center(child: _logoWidget()),
+                        Center(
+                          child: Icon(
+                            nestedOpen
+                                ? Icons.close_rounded
+                                : Icons.bug_report_rounded,
+                            size: 22,
+                            color: Colors.white,
+                          ),
+                        ),
                         Positioned(
                           right: -4,
                           top: -4,

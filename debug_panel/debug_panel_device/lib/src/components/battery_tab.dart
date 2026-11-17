@@ -6,6 +6,9 @@ class BatteryTab extends TabTemplate {
   const BatteryTab({super.key});
 
   @override
+  String get title => 'Battery';
+
+  @override
   Future<List<ListTileItem>> getItemList() async {
     final battery = Battery();
 

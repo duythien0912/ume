@@ -1,7 +1,3 @@
-///
-/// [Author] Alex (https://github.com/AlexV525)
-/// [Date] 2021/8/6 11:25
-///
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:debug_panel_core/debug_panel_core.dart';
@@ -10,11 +6,16 @@ import '../constants/extensions.dart';
 import '../instances.dart';
 import '../models/request_text.dart';
 import '../pluggable.dart';
-
-/// Longer bodies are cut on screen; copying always gives the full text.
-const int _maxShownChars = 20000;
+import 'code_view.dart';
 
 class DioPluggableState extends State<DioInspector> {
+  /// The one request shown expanded; opening another collapses it.
+  Response<dynamic>? _expanded;
+
+  /// The list as it was when [_expanded] opened, so new requests don't push
+  /// the open one away while it is being read.
+  List<Response<dynamic>>? _frozen;
+
   @override
   void initState() {
     super.initState();
@@ -36,164 +37,118 @@ class DioPluggableState extends State<DioInspector> {
 
   @override
   Widget build(BuildContext context) {
-    final requests = InspectorInstance.httpContainer.requests;
-    final size = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    return Material(
-      color: Colors.black38,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Container(
-          height: size.height * 0.85,
-          clipBehavior: Clip.antiAlias,
-          decoration: const BoxDecoration(
-            color: DebugPanelColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final all = InspectorInstance.httpContainer.requests;
+    final requests = _frozen ?? all;
+    final waiting = all.length - requests.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+          child: Row(
             children: <Widget>[
-              _Header(count: requests.length),
-              const Divider(height: 1),
               Expanded(
-                child: requests.isEmpty
-                    ? const _EmptyState()
-                    : ListView.separated(
-                        padding: EdgeInsets.only(bottom: padding.bottom),
-                        itemCount: requests.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, int index) {
-                          final response = requests[index];
-                          return _RequestTile(
-                            key: ObjectKey(response),
-                            response: response,
-                          );
-                        },
-                      ),
+                child: Text(
+                  waiting > 0
+                      ? '${requests.length} requests · $waiting new'
+                      : '${requests.length} requests',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: DebugPanelColors.textMuted,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: all.isEmpty
+                    ? null
+                    : () {
+                        setState(() => _expanded = _frozen = null);
+                        InspectorInstance.httpContainer.clearRequests();
+                      },
+                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                label: const Text('Clear'),
+                style: TextButton.styleFrom(
+                  foregroundColor: DebugPanelColors.text,
+                  disabledForegroundColor: DebugPanelColors.border,
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: Theme.of(context).textTheme.labelMedium,
+                ),
               ),
             ],
           ),
         ),
-      ),
+        const Divider(),
+        Expanded(
+          child: requests.isEmpty
+              ? const EmptyHint(
+                  'No requests yet. Dio calls show up here.',
+                  icon: Icons.wifi_tethering_rounded,
+                )
+              : ListView.separated(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom + 8,
+                  ),
+                  itemCount: requests.length,
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (_, int index) {
+                    final response = requests[index];
+                    final expanded = identical(response, _expanded);
+                    return _RequestRow(
+                      key: ObjectKey(response),
+                      response: response,
+                      expanded: expanded,
+                      onTap: (rowContext) {
+                        setState(() {
+                          _expanded = expanded ? null : response;
+                          _frozen = expanded ? null : List.of(all);
+                        });
+                        if (expanded) return;
+                        // Bring the opened request to the top of the sheet.
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (rowContext.mounted) {
+                            Scrollable.ensureVisible(
+                              rowContext,
+                              duration: const Duration(milliseconds: 200),
+                            );
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
-      child: Row(
-        children: <Widget>[
-          const Text(
-            'Network',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: DebugPanelColors.text,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _Chip(label: '$count', color: DebugPanelColors.textMuted),
-          const Spacer(),
-          DebugPanelIconButton(
-            icon: Icons.delete_sweep_outlined,
-            tooltip: 'Clear',
-            onPressed: count == 0
-                ? null
-                : InspectorInstance.httpContainer.clearRequests,
-          ),
-          const SizedBox(width: 8),
-          const DebugPanelIconButton(
-            icon: Icons.close_rounded,
-            tooltip: 'Close',
-            onPressed: DebugPanel.closeActivatedPlugin,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.wifi_tethering, size: 48, color: DebugPanelColors.textMuted),
-          SizedBox(height: 12),
-          Text(
-            'No requests yet',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: DebugPanelColors.text,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Requests made through Dio show up here.',
-            style: TextStyle(fontSize: 13, color: DebugPanelColors.textMuted),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RequestTile extends StatefulWidget {
-  const _RequestTile({super.key, required this.response});
+class _RequestRow extends StatelessWidget {
+  const _RequestRow({
+    super.key,
+    required this.response,
+    required this.expanded,
+    required this.onTap,
+  });
 
   final Response<dynamic> response;
-
-  @override
-  State<_RequestTile> createState() => _RequestTileState();
-}
-
-class _RequestTileState extends State<_RequestTile> {
-  late final RequestText _text = RequestText(widget.response);
-  bool _expanded = false;
-
-  Color get _statusColor {
-    final code = _text.statusCode;
-    if (code == null) return DebugPanelColors.danger;
-    if (code < 300) return DebugPanelColors.success;
-    if (code < 400) return DebugPanelColors.info;
-    if (code < 500) return DebugPanelColors.warning;
-    return DebugPanelColors.danger;
-  }
-
-  String get _subtitle {
-    final parts = <String>[_text.uri.host];
-    final start = widget.response.startTime;
-    if (start != null) parts.add(_hms(start));
-    final duration = widget.response.duration;
-    if (duration != null) parts.add('${duration.inMilliseconds} ms');
-    return parts.join('  ·  ');
-  }
+  final bool expanded;
+  final ValueChanged<BuildContext> onTap;
 
   @override
   Widget build(BuildContext context) {
-    final uri = _text.uri;
-    final path =
-        '${uri.path.isEmpty ? '/' : uri.path}'
-        '${uri.hasQuery ? '?${uri.query}' : ''}';
-    return DecoratedBox(
+    final text = RequestText.of(response);
+    final uri = text.uri;
+    final start = response.startTime;
+    final duration = response.duration;
+    return Container(
       decoration: BoxDecoration(
-        color: _expanded ? const Color(0xFFF9FAFB) : DebugPanelColors.surface,
+        color: expanded ? DebugPanelColors.surface : null,
         border: Border(
           left: BorderSide(
-            color: _expanded ? DebugPanelColors.accent : Colors.transparent,
-            width: 3,
+            color: expanded ? DebugPanelColors.accent : Colors.transparent,
+            width: 2,
           ),
         ),
       ),
@@ -201,71 +156,92 @@ class _RequestTileState extends State<_RequestTile> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () => onTap(context),
+            onLongPress: () => debugPanelCopy(
+              context,
+              text.fullText,
+              message: 'Copied request and response',
+            ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Tag(
+                      label: text.method,
+                      color: DebugPanelColors.method(text.method),
+                      width: 58,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            _Chip(
-                              label: _text.method,
-                              color: DebugPanelColors.accent,
-                            ),
-                            const SizedBox(width: 6),
-                            _Chip(
-                              label: _text.statusCode?.toString() ?? 'ERR',
-                              color: _statusColor,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
                         Text(
-                          path,
-                          maxLines: _expanded ? null : 2,
-                          overflow: _expanded ? null : TextOverflow.ellipsis,
+                          '${uri.path.isEmpty ? '/' : uri.path}'
+                          '${uri.hasQuery ? '?${uri.query}' : ''}',
+                          maxLines: expanded ? null : 1,
+                          overflow: expanded ? null : TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: DebugPanelColors.text,
+                            height: 1.3,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _subtitle,
+                        Text.rich(
+                          TextSpan(
+                            children: <InlineSpan>[
+                              TextSpan(
+                                text: text.statusCode == null
+                                    ? 'Failed'
+                                    : text.statusLabel(),
+                                style: TextStyle(
+                                  color: DebugPanelColors.status(
+                                    text.statusCode,
+                                  ),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (duration != null)
+                                TextSpan(
+                                  text: '  ·  ${duration.inMilliseconds} ms',
+                                ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 11.5,
                             color: DebugPanelColors.textMuted,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  DebugPanelCopyButton(
-                    tooltip: 'Copy request and response',
-                    icon: Icons.copy_all_rounded,
-                    color: DebugPanelColors.accent,
-                    text: () => _text.fullText,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: DebugPanelColors.textMuted,
+                  if (start != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, top: 1),
+                      child: Text(
+                        hms(start),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: DebugPanelColors.textMuted,
+                          fontFeatures: <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          if (_expanded) _Details(text: _text),
+          if (expanded) _Details(text: text),
         ],
       ),
     );
@@ -279,130 +255,195 @@ class _Details extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final error = text.statusCode == null ? text.statusLabel() : null;
+    final error = text.statusCode == null ? text.response.statusMessage : null;
+    final start = text.response.startTime;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.fromLTRB(10, 0, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          if (error != null) _Field(label: 'Error', value: error, danger: true),
+          _Field(label: 'URL', value: '${text.uri}'),
           Row(
             children: <Widget>[
               Expanded(
-                child: DebugPanelCopyAction(
-                  icon: Icons.copy_all_rounded,
-                  label: 'Copy all',
-                  text: () => text.fullText,
-                ),
+                child: start == null
+                    ? const SizedBox.shrink()
+                    : _Field(label: 'Started', value: dateTime(start)),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DebugPanelCopyAction(
-                  icon: Icons.terminal_rounded,
-                  label: 'Copy cURL',
-                  text: () => text.curl,
-                ),
+              DebugPanelCopyButton(
+                tooltip: 'Copy request and response',
+                icon: Icons.copy_all_rounded,
+                size: 17,
+                dense: true,
+                color: DebugPanelColors.text,
+                text: () => text.fullText,
+              ),
+              DebugPanelCopyButton(
+                tooltip: 'Copy as cURL',
+                icon: Icons.terminal_rounded,
+                size: 17,
+                dense: true,
+                color: DebugPanelColors.text,
+                text: () => text.curl,
               ),
             ],
           ),
-          if (error != null) _Section(title: 'Error', body: error),
-          _Section(title: 'URL', body: '${text.uri}'),
-          _Section(title: 'Request headers', body: text.requestHeaders),
+          _Section(
+            title: 'Request headers',
+            count: text.requestHeaderEntries.length,
+            body: text.requestHeaders,
+            headers: true,
+          ),
           _Section(title: 'Request body', body: text.requestBody),
-          _Section(title: 'Response headers', body: text.responseHeaders),
-          _Section(title: 'Response body', body: text.responseBody),
+          _Section(
+            title: 'Response headers',
+            count: text.responseHeaderEntries.length,
+            body: text.responseHeaders,
+            headers: true,
+          ),
+          _Section(
+            title: 'Response body',
+            body: text.responseBody,
+            initiallyOpen: true,
+          ),
         ],
       ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.body});
+class _Field extends StatelessWidget {
+  const _Field({required this.label, required this.value, this.danger = false});
+
+  final String label;
+  final String value;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 60,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: DebugPanelColors.textMuted,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: debugPanelMonoStyle.copyWith(
+                color: danger ? DebugPanelColors.danger : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A titled block that opens and closes, with a copy button.
+class _Section extends StatefulWidget {
+  const _Section({
+    required this.title,
+    required this.body,
+    this.count,
+    this.headers = false,
+    this.initiallyOpen = false,
+  });
 
   final String title;
   final String? body;
+  final int? count;
+  final bool headers;
+  final bool initiallyOpen;
+
+  @override
+  State<_Section> createState() => _SectionState();
+}
+
+class _SectionState extends State<_Section> {
+  late bool _open = widget.initiallyOpen;
+
+  /// Reused so list rebuilds don't re-tokenize a large body.
+  late final Widget _block = CodeBlock(
+    text: widget.body!,
+    headers: widget.headers,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final body = this.body;
+    final body = widget.body;
     if (body == null || body.isEmpty) return const SizedBox.shrink();
-    final truncated = body.length > _maxShownChars;
-    final shown = truncated
-        ? body.characters.take(_maxShownChars).toString()
-        : body;
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  title,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          borderRadius: BorderRadius.circular(6),
+          child: SizedBox(
+            height: 34,
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  _open
+                      ? Icons.expand_more_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 18,
+                  color: DebugPanelColors.textMuted,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.title,
                   style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                     color: DebugPanelColors.text,
                   ),
                 ),
-              ),
-              DebugPanelCopyButton(
-                tooltip: 'Copy $title',
-                text: () => body,
-                size: 18,
-              ),
-            ],
-          ),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: DebugPanelColors.surfaceMuted,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: SelectableText(
-              truncated
-                  ? '$shown\n… '
-                        '(${body.length - shown.length} more characters, '
-                        'copy to get all)'
-                  : body,
-              style: debugPanelMonoStyle,
+                const SizedBox(width: 6),
+                Text(
+                  widget.count == null ? '' : '${widget.count}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: DebugPanelColors.textMuted,
+                  ),
+                ),
+                const Spacer(),
+                DebugPanelCopyButton(
+                  tooltip: 'Copy ${widget.title.toLowerCase()}',
+                  size: 15,
+                  dense: true,
+                  text: () => body,
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: color,
-          letterSpacing: 0.3,
         ),
-      ),
+        if (_open)
+          Padding(padding: const EdgeInsets.only(bottom: 4), child: _block),
+      ],
     );
   }
 }
 
-String _hms(DateTime t) =>
+String hms(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:'
     '${t.minute.toString().padLeft(2, '0')}:'
     '${t.second.toString().padLeft(2, '0')}';
+
+String dateTime(DateTime t) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${t.year}-${two(t.month)}-${two(t.day)} ${hms(t)}'
+      '.${t.millisecond.toString().padLeft(3, '0')}';
+}

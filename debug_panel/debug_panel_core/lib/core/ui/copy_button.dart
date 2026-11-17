@@ -4,6 +4,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:debug_panel_core/core/ui/theme.dart';
 
+/// Copies [text] and confirms with a short snack bar when one can be shown.
+Future<void> debugPanelCopy(
+  BuildContext context,
+  String text, {
+  String message = 'Copied',
+}) async {
+  try {
+    await Clipboard.setData(ClipboardData(text: text));
+  } on PlatformException {
+    return;
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 1)),
+    );
+}
+
 /// Copies [text] and shows a check mark for a moment.
 mixin _CopyFeedback<T extends StatefulWidget> on State<T> {
   bool copied = false;
@@ -33,11 +52,13 @@ mixin _CopyFeedback<T extends StatefulWidget> on State<T> {
 /// An icon button that copies [text] and briefly shows a check mark.
 class DebugPanelCopyButton extends StatefulWidget {
   const DebugPanelCopyButton({
+    super.key,
     required this.tooltip,
     required this.text,
-    this.size = 20,
+    this.size = 18,
     this.icon = Icons.copy_rounded,
     this.color = DebugPanelColors.textMuted,
+    this.dense = false,
   });
 
   final String tooltip;
@@ -45,6 +66,9 @@ class DebugPanelCopyButton extends StatefulWidget {
   final double size;
   final IconData icon;
   final Color color;
+
+  /// A 28 px button for list rows instead of the usual 40 px.
+  final bool dense;
 
   @override
   State<DebugPanelCopyButton> createState() => _DebugPanelCopyButtonState();
@@ -57,6 +81,10 @@ class _DebugPanelCopyButtonState extends State<DebugPanelCopyButton>
     return IconButton(
       tooltip: copied ? 'Copied' : widget.tooltip,
       visualDensity: VisualDensity.compact,
+      constraints: widget.dense
+          ? const BoxConstraints.tightFor(width: 28, height: 28)
+          : null,
+      padding: widget.dense ? EdgeInsets.zero : null,
       onPressed: () => copy(widget.text()),
       icon: Icon(
         copied ? Icons.check_rounded : widget.icon,
@@ -67,9 +95,10 @@ class _DebugPanelCopyButtonState extends State<DebugPanelCopyButton>
   }
 }
 
-/// An outlined button that copies [text] and briefly shows "Copied".
+/// A small pill button that copies [text] and briefly shows "Copied".
 class DebugPanelCopyAction extends StatefulWidget {
   const DebugPanelCopyAction({
+    super.key,
     required this.icon,
     required this.label,
     required this.text,
@@ -87,18 +116,23 @@ class _DebugPanelCopyActionState extends State<DebugPanelCopyAction>
     with _CopyFeedback<DebugPanelCopyAction> {
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    final color = copied ? DebugPanelColors.success : DebugPanelColors.text;
+    return TextButton.icon(
       onPressed: () => copy(widget.text()),
-      icon: Icon(copied ? Icons.check_rounded : widget.icon, size: 18),
+      icon: Icon(copied ? Icons.check_rounded : widget.icon, size: 15),
       label: Text(copied ? 'Copied' : widget.label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor:
-            copied ? DebugPanelColors.success : DebugPanelColors.text,
-        side: const BorderSide(color: DebugPanelColors.border),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        minimumSize: const Size(0, 40),
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        backgroundColor: DebugPanelColors.surfaceMuted,
+        textStyle: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        minimumSize: const Size(0, 30),
+        fixedSize: const Size.fromHeight(30),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
 }
-

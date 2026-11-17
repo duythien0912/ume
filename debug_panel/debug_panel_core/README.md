@@ -18,9 +18,10 @@ void main() {
 ```
 
 - Tap the floating button to open the panel. Drag it to move it.
-- The compact panel shows the tools in a row; expand it to see them in a grid and long-press to reorder.
-- A tool that draws its own close button implements `PluggableWithCloseButton` and calls `DebugPanel.closeActivatedPlugin()`; the floating button hides while it is open.
-- `debugPanelTheme`, `DebugPanelColors`, `DebugPanelIconButton`, `DebugPanelCopyButton` and `DebugPanelCopyAction` let tools match the panel.
+- The panel is a dark bottom sheet. Chips at the top switch tools; the expand button (or a drag on the header) toggles full height.
+- It opens on the tool named by `initialTool` (the Dio inspector by default), or the first registered tool.
+- `DebugPanel.closeActivatedPlugin()` closes the panel from code.
+- `debugPanelTheme`, `DebugPanelColors`, `DebugPanelIconButton`, `DebugPanelCopyButton`, `DebugPanelCopyAction` and `debugPanelCopy` let tools match the panel.
 
 ## Credits
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:debug_panel_core/core/ui/theme.dart';
 
-/// A round icon button used in panel and tool headers.
+/// A small square icon button used in panel and tool headers.
 class DebugPanelIconButton extends StatelessWidget {
   const DebugPanelIconButton({
     super.key,
@@ -19,13 +19,16 @@ class DebugPanelIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       tooltip: tooltip,
-      icon: Icon(icon, size: 20, color: DebugPanelColors.text),
+      icon: Icon(icon, size: 18),
       style: IconButton.styleFrom(
+        foregroundColor: DebugPanelColors.text,
+        disabledForegroundColor: DebugPanelColors.border,
         backgroundColor: DebugPanelColors.surfaceMuted,
-        disabledBackgroundColor: DebugPanelColors.surfaceMuted,
-        fixedSize: const Size(36, 36),
-        minimumSize: const Size(36, 36),
+        disabledBackgroundColor: DebugPanelColors.surface,
+        fixedSize: const Size(32, 32),
+        minimumSize: const Size(32, 32),
         padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
