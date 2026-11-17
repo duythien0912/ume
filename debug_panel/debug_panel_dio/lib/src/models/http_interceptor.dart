@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../constants/constants.dart';
 import '../instances.dart';
+import 'request_text.dart';
 
 int get _timestamp => DateTime.now().millisecondsSinceEpoch;
 
@@ -42,6 +43,7 @@ class DebugPanelDioInterceptor extends Interceptor {
           statusMessage: exception.message ?? exception.type.name,
         );
     response.requestOptions.extra[DIO_EXTRA_END_TIME] = _timestamp;
+    RequestText.recordError(response, exception);
     InspectorInstance.httpContainer.addRequest(response);
     handler.next(exception);
   }

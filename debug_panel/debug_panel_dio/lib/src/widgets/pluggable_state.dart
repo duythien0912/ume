@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:debug_panel_core/debug_panel_core.dart';
 
 import '../constants/extensions.dart';
 import '../instances.dart';
+
 import '../models/request_text.dart';
 import '../pluggable.dart';
 import 'code_view.dart';
@@ -142,6 +145,7 @@ class _RequestRow extends StatelessWidget {
     final uri = text.uri;
     final start = response.startTime;
     final duration = response.duration;
+    final size = text.responseBytes;
     return Container(
       decoration: BoxDecoration(
         color: expanded ? DebugPanelColors.surface : null,
@@ -157,9 +161,9 @@ class _RequestRow extends StatelessWidget {
         children: <Widget>[
           InkWell(
             onTap: () => onTap(context),
-            onLongPress: () => debugPanelCopy(
+            onLongPress: () async => debugPanelCopy(
               context,
-              text.fullText,
+              await text.fullText(),
               message: 'Copied request and response',
             ),
             child: Padding(
@@ -211,6 +215,8 @@ class _RequestRow extends StatelessWidget {
                                 TextSpan(
                                   text: '  ·  ${duration.inMilliseconds} ms',
                                 ),
+                              if (size != null)
+                                TextSpan(text: '  ·  ${debugPanelBytes(size)}'),
                             ],
                           ),
                           maxLines: 1,
@@ -227,7 +233,7 @@ class _RequestRow extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(left: 8, top: 1),
                       child: Text(
-                        hms(start),
+                        start.toString().substring(11, 19),
                         style: const TextStyle(
                           fontSize: 11,
                           color: DebugPanelColors.textMuted,
@@ -255,8 +261,13 @@ class _Details extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final error = text.statusCode == null ? text.response.statusMessage : null;
+    final error = text.error;
+    final finalUri = text.finalUri;
+    final redirects = text.redirects;
     final start = text.response.startTime;
+    final end = text.response.endTime;
+    final requestBytes = text.requestBytes;
+    final responseBytes = text.responseBytes;
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 0, 12, 12),
       child: Column(
@@ -264,12 +275,19 @@ class _Details extends StatelessWidget {
         children: <Widget>[
           if (error != null) _Field(label: 'Error', value: error, danger: true),
           _Field(label: 'URL', value: '${text.uri}'),
+          if (finalUri != null) _Field(label: 'Final', value: '$finalUri'),
+          if (redirects != null) _Field(label: 'Redirects', value: redirects),
           Row(
             children: <Widget>[
               Expanded(
                 child: start == null
                     ? const SizedBox.shrink()
-                    : _Field(label: 'Started', value: dateTime(start)),
+                    : _Field(
+                        label: 'Time',
+                        value: end == null
+                            ? '$start'
+                            : '$start → ${'$end'.substring(11)}',
+                      ),
               ),
               DebugPanelCopyButton(
                 tooltip: 'Copy request and response',
@@ -277,7 +295,7 @@ class _Details extends StatelessWidget {
                 size: 17,
                 dense: true,
                 color: DebugPanelColors.text,
-                text: () => text.fullText,
+                text: text.fullText,
               ),
               DebugPanelCopyButton(
                 tooltip: 'Copy as cURL',
@@ -289,24 +307,38 @@ class _Details extends StatelessWidget {
               ),
             ],
           ),
-          _Section(
-            title: 'Request headers',
-            count: text.requestHeaderEntries.length,
-            body: text.requestHeaders,
-            headers: true,
-          ),
-          _Section(title: 'Request body', body: text.requestBody),
-          _Section(
-            title: 'Response headers',
-            count: text.responseHeaderEntries.length,
-            body: text.responseHeaders,
-            headers: true,
-          ),
-          _Section(
-            title: 'Response body',
-            body: text.responseBody,
-            initiallyOpen: true,
-          ),
+          if (text.requestHeaders != null)
+            _Section.text(
+              title: 'Request headers',
+              note: '${text.requestHeaderEntries.length}',
+              headers: true,
+              text: text.requestHeaders!,
+            ),
+          if (text.hasRequestBody)
+            _Section(
+              title: 'Request body',
+              note: requestBytes == null ? null : debugPanelBytes(requestBytes),
+              load: text.requestBodyText,
+            ),
+          _Section.text(title: 'Options', headers: true, text: text.options),
+          if (text.responseHeaders != null)
+            _Section.text(
+              title: 'Response headers',
+              note: '${text.responseHeaderEntries.length}',
+              headers: true,
+              text: text.responseHeaders!,
+            ),
+          if (text.hasResponseBody)
+            _Section(
+              title: 'Response body',
+              note: responseBytes == null
+                  ? null
+                  : debugPanelBytes(responseBytes),
+              load: text.responseBodyText,
+              initiallyOpen: true,
+            ),
+          if (text.stackTrace != null)
+            _Section.text(title: 'Stack trace', text: text.stackTrace!),
         ],
       ),
     );
@@ -352,19 +384,29 @@ class _Field extends StatelessWidget {
   }
 }
 
-/// A titled block that opens and closes, with a copy button.
+/// A titled block that opens and closes; its text is formatted on first open.
 class _Section extends StatefulWidget {
   const _Section({
     required this.title,
-    required this.body,
-    this.count,
-    this.headers = false,
+    required this.load,
+    this.note,
     this.initiallyOpen = false,
-  });
+  }) : text = null,
+       headers = false;
+
+  /// A section whose text is already at hand.
+  const _Section.text({
+    required this.title,
+    required String this.text,
+    this.note,
+    this.headers = false,
+  }) : load = null,
+       initiallyOpen = false;
 
   final String title;
-  final String? body;
-  final int? count;
+  final String? text;
+  final FutureOr<BodyText?> Function()? load;
+  final String? note;
   final bool headers;
   final bool initiallyOpen;
 
@@ -374,76 +416,62 @@ class _Section extends StatefulWidget {
 
 class _SectionState extends State<_Section> {
   late bool _open = widget.initiallyOpen;
+  bool _requested = false;
+  BodyText? _body;
 
   /// Reused so list rebuilds don't re-tokenize a large body.
-  late final Widget _block = CodeBlock(
-    text: widget.body!,
-    headers: widget.headers,
-  );
+  Widget? _block;
+
+  void _load() {
+    if (_requested) return;
+    _requested = true;
+    final text = widget.text;
+    final result = text != null ? BodyText(text, null) : widget.load!();
+    if (result is Future<BodyText?>) {
+      result.then((body) {
+        if (mounted) setState(() => _body = body);
+      });
+    } else {
+      _body = result;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final body = widget.body;
-    if (body == null || body.isEmpty) return const SizedBox.shrink();
+    if (_open) _load();
+    final body = _body;
+    final bytes = body?.bytes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        InkWell(
+        DebugPanelSectionHeader(
+          title: widget.title,
+          open: _open,
           onTap: () => setState(() => _open = !_open),
-          borderRadius: BorderRadius.circular(6),
-          child: SizedBox(
-            height: 34,
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  _open
-                      ? Icons.expand_more_rounded
-                      : Icons.chevron_right_rounded,
-                  size: 18,
-                  color: DebugPanelColors.textMuted,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: DebugPanelColors.text,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  widget.count == null ? '' : '${widget.count}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: DebugPanelColors.textMuted,
-                  ),
-                ),
-                const Spacer(),
-                DebugPanelCopyButton(
-                  tooltip: 'Copy ${widget.title.toLowerCase()}',
-                  size: 15,
-                  dense: true,
-                  text: () => body,
-                ),
-              ],
-            ),
-          ),
+          // The formatted body's decoded size beats the early estimate.
+          note: bytes == null ? widget.note : debugPanelBytes(bytes),
+          copyText: () async =>
+              widget.text ?? (await widget.load!())?.text ?? '',
         ),
         if (_open)
-          Padding(padding: const EdgeInsets.only(bottom: 4), child: _block),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: body == null
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : _block ??= CodeBlock(
+                    text: body.text,
+                    headers: widget.headers,
+                  ),
+          ),
       ],
     );
   }
-}
-
-String hms(DateTime t) =>
-    '${t.hour.toString().padLeft(2, '0')}:'
-    '${t.minute.toString().padLeft(2, '0')}:'
-    '${t.second.toString().padLeft(2, '0')}';
-
-String dateTime(DateTime t) {
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${t.year}-${two(t.month)}-${two(t.day)} ${hms(t)}'
-      '.${t.millisecond.toString().padLeft(3, '0')}';
 }

@@ -36,57 +36,20 @@ class _TabTemplateState extends State<TabTemplate> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            InkWell(
+            DebugPanelSectionHeader(
+              title: widget.title,
+              open: _open,
+              indent: 8,
+              note: items == null ? null : '${items.length}',
               // Closing drops the result, so reopening reads fresh values.
               onTap: () => setState(() {
                 _open = !_open;
                 if (!_open) _items = null;
               }),
-              child: SizedBox(
-                height: 40,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8, right: 12),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        _open
-                            ? Icons.expand_more_rounded
-                            : Icons.chevron_right_rounded,
-                        size: 20,
-                        color: DebugPanelColors.textMuted,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.title,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: DebugPanelColors.text,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      if (items != null)
-                        Text(
-                          '${items.length}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: DebugPanelColors.textMuted,
-                          ),
-                        ),
-                      const Spacer(),
-                      if (_open && items != null && items.isNotEmpty)
-                        DebugPanelCopyButton(
-                          tooltip: 'Copy ${widget.title.toLowerCase()} info',
-                          size: 15,
-                          dense: true,
-                          text: () => items
-                              .map((e) => '${e.title}: ${e.subtitle}')
-                              .join('\n'),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+              copyText: _open && items != null && items.isNotEmpty
+                  ? () =>
+                      items.map((e) => '${e.title}: ${e.subtitle}').join('\n')
+                  : null,
             ),
             if (_open)
               if (snapshot.hasError)

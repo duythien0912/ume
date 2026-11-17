@@ -8,7 +8,6 @@ import 'package:dio/dio.dart' show Dio;
 import 'package:debug_panel_core/core/pluggable.dart';
 
 import 'models/http_interceptor.dart';
-import 'widgets/icon.dart' as icon;
 import 'widgets/pluggable_state.dart';
 
 /// Implement a [Pluggable] to integrate with the debug panel.
@@ -21,9 +20,6 @@ class DioInspector extends StatefulWidget implements Pluggable {
 
   @override
   DioPluggableState createState() => DioPluggableState();
-
-  @override
-  ImageProvider<Object> get iconImageProvider => MemoryImage(icon.iconBytes);
 
   @override
   String get name => 'DioInspector';

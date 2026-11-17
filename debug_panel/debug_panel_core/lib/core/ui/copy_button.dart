@@ -62,7 +62,9 @@ class DebugPanelCopyButton extends StatefulWidget {
   });
 
   final String tooltip;
-  final String Function() text;
+
+  /// May be async, so big text is built off the UI thread.
+  final FutureOr<String> Function() text;
   final double size;
   final IconData icon;
   final Color color;
@@ -85,7 +87,7 @@ class _DebugPanelCopyButtonState extends State<DebugPanelCopyButton>
           ? const BoxConstraints.tightFor(width: 28, height: 28)
           : null,
       padding: widget.dense ? EdgeInsets.zero : null,
-      onPressed: () => copy(widget.text()),
+      onPressed: () async => copy(await widget.text()),
       icon: Icon(
         copied ? Icons.check_rounded : widget.icon,
         size: widget.size,
@@ -106,7 +108,7 @@ class DebugPanelCopyAction extends StatefulWidget {
 
   final IconData icon;
   final String label;
-  final String Function() text;
+  final FutureOr<String> Function() text;
 
   @override
   State<DebugPanelCopyAction> createState() => _DebugPanelCopyActionState();
@@ -118,7 +120,7 @@ class _DebugPanelCopyActionState extends State<DebugPanelCopyAction>
   Widget build(BuildContext context) {
     final color = copied ? DebugPanelColors.success : DebugPanelColors.text;
     return TextButton.icon(
-      onPressed: () => copy(widget.text()),
+      onPressed: () async => copy(await widget.text()),
       icon: Icon(copied ? Icons.check_rounded : widget.icon, size: 15),
       label: Text(copied ? 'Copied' : widget.label),
       style: TextButton.styleFrom(
