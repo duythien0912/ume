@@ -16,9 +16,6 @@ dependencies:
   network_info_plus: ^6.1.1
   package_info_plus: ^8.1.1
   device_info_plus: ^11.1.1
-  system_info2: ^4.0.0
-  share_plus: ^11.0.0
-  platform: ^3.0.0
   debug_panel_core: ^1.0.0
 
 flutter:

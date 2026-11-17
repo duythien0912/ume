@@ -1,19 +1,20 @@
 # debug_panel_dio
 
-A renamed fork of [`ume_kit_dio`](https://pub.dev/packages/ume_kit_dio) from [UME](https://github.com/insightop/ume), published on pub.dev so apps can use it without a git dependency.
+Dio network inspector for [`debug_panel_core`](https://pub.dev/packages/debug_panel_core).
 
-Source: https://github.com/duythien0912/ume/tree/ume2/ume2/debug_panel_dio
-
-## Changes from `ume_kit_dio`
-
-- Package renamed to `debug_panel_dio`; the library is `package:debug_panel_dio/debug_panel_dio.dart`.
-- Depends on `debug_panel_core` instead of `ume_core`.
-- No other code changes.
+- Lists the latest 300 requests, newest first, with method, status, host, time and duration.
+- Requests that never got a response (network errors, timeouts) show as `ERR` with the error message.
+- One tap copies a whole request: URL, status, headers, bodies and a cURL command. Each section can also be copied on its own.
 
 ## Usage
 
-Same API as `ume_kit_dio`. Import `package:debug_panel_dio/debug_panel_dio.dart` instead of `package:ume_kit_dio/ume_kit_dio.dart`.
+```dart
+final dio = Dio();
+PluginManager.instance.register(DioInspector(dio: dio));
+```
 
-## License
+`DioInspector` adds `DebugPanelDioInterceptor` to the given `Dio`.
 
-MIT. Original work by the UME authors; see LICENSE.
+## Credits
+
+Based on UME (`ume_kit_dio`). MIT license; see LICENSE.

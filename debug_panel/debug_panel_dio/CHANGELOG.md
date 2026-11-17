@@ -1,7 +1,3 @@
-## 2.0.3
+## 1.0.0
 
-- README lists the changes from `ume_kit_dio` and links the source.
-
-## 2.0.2
-
-- Fork of `ume_kit_dio` 2.0.2 renamed to `debug_panel_dio`.
+- First release as `debug_panel_dio`, based on UME.

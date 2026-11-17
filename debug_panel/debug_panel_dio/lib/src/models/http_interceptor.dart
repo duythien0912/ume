@@ -35,10 +35,14 @@ class DebugPanelDioInterceptor extends Interceptor {
 
   @override
   void onError(DioException exception, ErrorInterceptorHandler handler) {
-    // Create an empty response with the [RequestOptions] for delivery.
-    // exception.response ??= Response<dynamic>(requestOptions: exception.requestOptions);
-    exception.response!.requestOptions.extra[DIO_EXTRA_END_TIME] = _timestamp;
-    InspectorInstance.httpContainer.addRequest(exception.response!);
+    // Network failures and timeouts have no response; record the error itself.
+    final response = exception.response ??
+        Response<dynamic>(
+          requestOptions: exception.requestOptions,
+          statusMessage: exception.message ?? exception.type.name,
+        );
+    response.requestOptions.extra[DIO_EXTRA_END_TIME] = _timestamp;
+    InspectorInstance.httpContainer.addRequest(response);
     handler.next(exception);
   }
 }

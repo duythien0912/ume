@@ -1,286 +1,162 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:debug_panel_core/core/ui/icon_cache.dart';
-import 'package:debug_panel_core/core/pluggable_message_service.dart';
-import 'package:debug_panel_core/core/ui/panel_action_define.dart';
-import 'package:debug_panel_core/core/plugin_manager.dart';
-import 'package:debug_panel_core/core/red_dot.dart';
-import 'package:debug_panel_core/core/store_manager.dart';
 import 'package:debug_panel_core/core/pluggable.dart';
-import 'package:debug_panel_core/util/constants.dart';
+import 'package:debug_panel_core/core/store_manager.dart';
+import 'package:debug_panel_core/core/ui/panel_action_define.dart';
+import 'package:debug_panel_core/core/ui/icon_button.dart';
+import 'package:debug_panel_core/core/ui/theme.dart';
+import 'package:debug_panel_core/core/ui/tool_tile.dart';
 
+const double _contentHeight = 160;
+
+/// The compact panel: a bottom sheet with the tool row, draggable up and down.
 class ToolBarWidget extends StatefulWidget {
-  ToolBarWidget({Key? key, this.action, this.maximalAction, this.closeAction})
-      : super(key: key);
+  const ToolBarWidget({
+    super.key,
+    this.action,
+    this.maximalAction,
+    this.closeAction,
+  });
 
   final MenuAction? action;
   final CloseAction? closeAction;
   final MaximalAction? maximalAction;
 
   @override
-  _ToolBarWidgetState createState() => _ToolBarWidgetState();
+  State<ToolBarWidget> createState() => _ToolBarWidgetState();
 }
-
-const double _dragBarHeight = 32;
-const double _minimalHeight = 80;
 
 class _ToolBarWidgetState extends State<ToolBarWidget> {
-  double _dy = 0;
-  late final double _maxDy;
+  /// Distance from the bottom of the screen; 0 keeps the sheet docked.
+  double _lift = 0;
+  List<Pluggable> _plugins = const <Pluggable>[];
 
   @override
   void initState() {
-    final bottomPadding = WidgetsBinding.instance.window.padding.bottom / ratio;
-    _maxDy =
-        windowSize.height - _minimalHeight - _dragBarHeight - bottomPadding;
-    _dy = _maxDy;
     super.initState();
-  }
-
-  void _dragEvent(DragUpdateDetails details) {
-    _dy += details.delta.dy;
-    _dy = min(max(0, _dy), _maxDy);
-    setState(() {});
+    loadOrderedPlugins().then((plugins) {
+      if (mounted) setState(() => _plugins = plugins);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final padding = MediaQuery.paddingOf(context);
+    final bottomInset = padding.bottom;
+    final height = _contentHeight + bottomInset;
+    final maxLift =
+        max(0.0, MediaQuery.sizeOf(context).height - height - padding.top);
+    final lift = min(_lift, maxLift);
     return Positioned(
       left: 0,
-      top: _dy,
-      child: _ToolBarContent(
-        action: widget.action,
-        dragCallback: _dragEvent,
-        maximalAction: widget.maximalAction,
-        closeAction: widget.closeAction,
-      ),
-    );
-  }
-}
-
-class _ToolBarContent extends StatefulWidget {
-  _ToolBarContent(
-      {Key? key,
-      this.action,
-      this.dragCallback,
-      this.maximalAction,
-      this.closeAction})
-      : super(key: key);
-
-  final MenuAction? action;
-  final Function? dragCallback;
-  final CloseAction? closeAction;
-  final MaximalAction? maximalAction;
-
-  @override
-  __ToolBarContentState createState() => __ToolBarContentState();
-}
-
-class __ToolBarContentState extends State<_ToolBarContent> {
-  PluginStoreManager _storeManager = PluginStoreManager();
-
-  List<Pluggable?> _dataList = [];
-  @override
-  void initState() {
-    super.initState();
-    _handleData();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const cornerRadius = Radius.circular(10);
-    return Material(
-      borderRadius:
-          BorderRadius.only(topLeft: cornerRadius, topRight: cornerRadius),
-      elevation: 20,
+      right: 0,
+      bottom: lift,
+      height: height,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius:
-              BorderRadius.only(topLeft: cornerRadius, topRight: cornerRadius),
-          color: Color(0xffd0d0d0),
+          color: DebugPanelColors.surface,
+          borderRadius: lift > 0
+              ? BorderRadius.circular(20)
+              : const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 16,
+              offset: Offset(0, -2),
+            ),
+          ],
         ),
-        width: MediaQuery.of(context).size.width,
-        height: _minimalHeight + _dragBarHeight,
+        padding: EdgeInsets.only(bottom: bottomInset),
         child: Column(
-          children: [
-            Container(
-              height: _dragBarHeight,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8, right: 8),
-                child: Row(
-                  children: [
-                    InkWell(
-                        onTap: () {
-                          if (widget.closeAction != null) {
-                            widget.closeAction!();
-                          }
-                        },
-                        child: const CircleAvatar(
-                          radius: 10,
-                          backgroundColor: const Color(0xffff5a52),
-                        )),
-                    const SizedBox(
-                      width: 8,
-                    ),
-                    InkWell(
-                        onTap: () {
-                          if (widget.maximalAction != null) {
-                            widget.maximalAction!();
-                          }
-                        },
-                        child: const CircleAvatar(
-                          radius: 10,
-                          backgroundColor: const Color(0xff53c22b),
-                        )),
-                    Expanded(
-                      child: GestureDetector(
-                        onVerticalDragUpdate: (details) =>
-                            _dragCallback(details),
-                        child: Container(
-                          height: _dragBarHeight,
-                          color: const Color(0xffd0d0d0),
-                          child: Center(
-                            child: Text(
-                              'UME',
-                              style: const TextStyle(
-                                  color: Color(0xff575757),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragUpdate: (details) => setState(() {
+                _lift = (lift - details.delta.dy).clamp(0.0, maxLift);
+              }),
+              child: _Header(
+                onExpand: widget.maximalAction,
+                onClose: widget.closeAction,
               ),
             ),
-            _PluginScrollContainer(
-              dataList: _dataList,
-              action: widget.action,
+            Expanded(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                itemCount: _plugins.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 4),
+                itemBuilder: (context, index) {
+                  final plugin = _plugins[index];
+                  return SizedBox(
+                    width: 76,
+                    child: ToolTile(
+                      pluggable: plugin,
+                      onTap: () => widget.action?.call(plugin),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
-  _dragCallback(DragUpdateDetails details) {
-    if (widget.dragCallback != null) widget.dragCallback!(details);
-  }
-
-  void _handleData() async {
-    List<Pluggable?> dataList = [];
-    List<String>? list = await _storeManager.fetchStorePlugins();
-    if (list == null || list.isEmpty) {
-      dataList = PluginManager.instance.pluginsMap.values.toList();
-    } else {
-      list.forEach((f) {
-        bool contain = PluginManager.instance.pluginsMap.containsKey(f);
-        if (contain) {
-          dataList.add(PluginManager.instance.pluginsMap[f]);
-        }
-      });
-      PluginManager.instance.pluginsMap.keys.forEach((key) {
-        if (!list.contains(key)) {
-          dataList.add(PluginManager.instance.pluginsMap[key]);
-        }
-      });
-    }
-    _saveData(dataList);
-    setState(() {
-      _dataList = dataList;
-    });
-  }
-
-  void _saveData(List<Pluggable?> data) {
-    List l = data.map((f) => f!.name).toList();
-    if (l.isEmpty) {
-      return;
-    }
-    Future.delayed(Duration(milliseconds: 500), () {
-      _storeManager.storePlugins(l as List<String>);
-    });
-  }
 }
 
-class _PluginScrollContainer extends StatelessWidget {
-  _PluginScrollContainer({Key? key, required this.dataList, this.action})
-      : super(key: key);
+class _Header extends StatelessWidget {
+  const _Header({this.onExpand, this.onClose});
 
-  final List<Pluggable?> dataList;
-  final MenuAction? action;
+  final VoidCallback? onExpand;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-        height: _minimalHeight,
-        width: MediaQuery.of(context).size.width,
-        child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: dataList
-                  .map(
-                    (data) => _MenuCell(
-                      pluginData: data,
-                      action: action,
-                    ),
-                  )
-                  .toList(),
-            )));
-  }
-}
-
-class _MenuCell extends StatelessWidget {
-  const _MenuCell({Key? key, this.pluginData, this.action}) : super(key: key);
-
-  final Pluggable? pluginData;
-  final MenuAction? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        PluggableMessageService().resetCounter(pluginData!);
-        if (action != null) {
-          action!(pluginData);
-        }
-      },
-      child: Stack(
-        children: [
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+      child: Column(
+        children: <Widget>[
           Container(
-            height: _minimalHeight,
-            width: _minimalHeight,
-            color: Colors.white,
-            child: Container(
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Container(
-                      child: IconCache.icon(pluggableInfo: pluginData!),
-                      height: 28,
-                      width: 28),
-                  Container(
-                      margin: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        pluginData!.name,
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.black),
-                        maxLines: 1,
-                      ))
-                ],
-              ),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: DebugPanelColors.border,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
-          Positioned(
-            right: 8,
-            top: 8,
-            child: RedDot(
-              pluginDatas: [pluginData],
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.bug_report_rounded,
+                size: 20,
+                color: DebugPanelColors.accent,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Debug panel',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: DebugPanelColors.text,
+                  ),
+                ),
+              ),
+              DebugPanelIconButton(
+                icon: Icons.open_in_full_rounded,
+                tooltip: 'Expand',
+                onPressed: onExpand,
+              ),
+              const SizedBox(width: 8),
+              DebugPanelIconButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Close',
+                onPressed: onClose,
+              ),
+            ],
           ),
         ],
       ),

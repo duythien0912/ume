@@ -11,9 +11,8 @@ import 'models/http_interceptor.dart';
 import 'widgets/icon.dart' as icon;
 import 'widgets/pluggable_state.dart';
 
-// TODO(Alex): Implement [PluggableStream] for dot features.
 /// Implement a [Pluggable] to integrate with the debug panel.
-class DioInspector extends StatefulWidget implements Pluggable {
+class DioInspector extends StatefulWidget implements PluggableWithCloseButton {
   DioInspector({Key? key, required this.dio}) : super(key: key) {
     dio.interceptors.add(DebugPanelDioInterceptor());
   }
@@ -30,7 +29,7 @@ class DioInspector extends StatefulWidget implements Pluggable {
   String get name => 'DioInspector';
 
   @override
-  String get displayName => 'DioInspector';
+  String get displayName => 'Network';
 
   @override
   void onTrigger() {}

@@ -1,3 +1,7 @@
+import 'package:flutter/foundation.dart';
+import 'package:debug_panel_core/core/pluggable.dart';
+import 'package:debug_panel_core/core/plugin_manager.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PluginStoreManager {
@@ -39,4 +43,19 @@ class PluginStoreManager {
     final SharedPreferences prefs = await _sharedPref;
     prefs.setString(_floatingDotPos, "$x,$y");
   }
+}
+
+/// Registered plugins in the order the user last arranged them.
+Future<List<Pluggable>> loadOrderedPlugins() async {
+  final plugins = PluginManager.instance.pluginsMap;
+  final stored = await PluginStoreManager().fetchStorePlugins() ?? <String>[];
+  final ordered = <Pluggable>[
+    for (final name in stored)
+      if (plugins[name] != null) plugins[name]!,
+    for (final entry in plugins.entries)
+      if (!stored.contains(entry.key) && entry.value != null) entry.value!,
+  ];
+  final names = ordered.map((p) => p.name).toList();
+  if (!listEquals(names, stored)) PluginStoreManager().storePlugins(names);
+  return ordered;
 }

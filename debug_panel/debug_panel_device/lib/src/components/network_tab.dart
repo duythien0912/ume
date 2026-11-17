@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
@@ -9,47 +8,33 @@ class NetworkTab extends TabTemplate {
 
   @override
   Future<List<ListTileItem>> getItemList() async {
+    final info = NetworkInfo();
+    final connectivity = Connectivity().checkConnectivity();
+    final values = await Future.wait(<Future<String?>>[
+      info.getWifiName(),
+      info.getWifiBSSID(),
+      info.getWifiIP(),
+      info.getWifiIPv6(),
+      info.getWifiSubmask(),
+      info.getWifiBroadcast(),
+      info.getWifiGatewayIP(),
+    ]);
+    const titles = <String>[
+      'Network name',
+      'BSSID',
+      'IP address',
+      'IPv6 address',
+      'Submask',
+      'Broadcast',
+      'Gateway',
+    ];
     return [
       ListTileItem(
         title: 'Connectivity',
-        subtitle: '${await Connectivity().checkConnectivity()}',
-        icon: Icons.network_check,
+        subtitle: (await connectivity).map((r) => r.name).join(', '),
       ),
-      ListTileItem(
-        title: 'Network name',
-        subtitle: '${await NetworkInfo().getWifiName()}',
-        icon: Icons.text_fields,
-      ),
-      ListTileItem(
-        title: 'BSSID',
-        subtitle: '${await NetworkInfo().getWifiBSSID()}',
-        icon: Icons.text_fields,
-      ),
-      ListTileItem(
-        title: 'IP address',
-        subtitle: '${await NetworkInfo().getWifiIP()}',
-        icon: Icons.label,
-      ),
-      ListTileItem(
-        title: 'MAC address',
-        subtitle: '${await NetworkInfo().getWifiIPv6()}',
-        icon: Icons.network_check,
-      ),
-      ListTileItem(
-        title: 'Submask',
-        subtitle: '${await NetworkInfo().getWifiSubmask()}',
-        icon: Icons.network_check,
-      ),
-      ListTileItem(
-        title: 'Broadcast',
-        subtitle: '${await NetworkInfo().getWifiBroadcast()}',
-        icon: Icons.podcasts,
-      ),
-      ListTileItem(
-        title: 'Gateway',
-        subtitle: '${await NetworkInfo().getWifiGatewayIP()}',
-        icon: Icons.router,
-      ),
+      for (var i = 0; i < titles.length; i++)
+        ListTileItem(title: titles[i], subtitle: values[i] ?? 'Unavailable'),
     ];
   }
 }

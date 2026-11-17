@@ -1,242 +1,125 @@
 import 'package:flutter/material.dart';
-import 'package:debug_panel_core/core/ui/icon_cache.dart';
-import 'package:debug_panel_core/core/pluggable_message_service.dart';
-import 'package:debug_panel_core/core/red_dot.dart';
+import 'package:debug_panel_core/core/pluggable.dart';
 import 'package:debug_panel_core/core/store_manager.dart';
-import 'package:debug_panel_core/debug_panel_core.dart';
-import 'dragable_widget.dart';
 import 'package:debug_panel_core/core/ui/panel_action_define.dart';
+import 'package:debug_panel_core/core/ui/icon_button.dart';
+import 'package:debug_panel_core/core/ui/theme.dart';
+import 'package:debug_panel_core/core/ui/tool_tile.dart';
+import 'dragable_widget.dart';
 
+/// The expanded panel: every tool in a grid the user can reorder.
 class MenuPage extends StatefulWidget {
-  MenuPage({Key? key, this.action, this.minimalAction, this.closeAction})
-      : super(key: key);
+  const MenuPage({
+    super.key,
+    this.action,
+    this.minimalAction,
+    this.closeAction,
+  });
 
   final MenuAction? action;
   final MinimalAction? minimalAction;
   final CloseAction? closeAction;
 
   @override
-  _MenuPageState createState() => _MenuPageState();
+  State<MenuPage> createState() => _MenuPageState();
 }
 
-class _MenuPageState extends State<MenuPage>
-    with SingleTickerProviderStateMixin {
-  PluginStoreManager _storeManager = PluginStoreManager();
-
-  List<Pluggable?> _dataList = [];
+class _MenuPageState extends State<MenuPage> {
+  List<Pluggable>? _plugins;
 
   @override
   void initState() {
     super.initState();
-    _handleData();
-  }
-
-  void _handleData() async {
-    List<Pluggable?> dataList = [];
-    List<String>? list = await _storeManager.fetchStorePlugins();
-    if (list == null || list.isEmpty) {
-      dataList = PluginManager.instance.pluginsMap.values.toList();
-    } else {
-      list.forEach((f) {
-        bool contain = PluginManager.instance.pluginsMap.containsKey(f);
-        if (contain) {
-          dataList.add(PluginManager.instance.pluginsMap[f]);
-        }
-      });
-      PluginManager.instance.pluginsMap.keys.forEach((key) {
-        if (!list.contains(key)) {
-          dataList.add(PluginManager.instance.pluginsMap[key]);
-        }
-      });
-    }
-    _saveData(dataList);
-    setState(() {
-      _dataList = dataList;
-    });
-  }
-
-  void _saveData(List<Pluggable?> data) {
-    List l = data.map((f) => f!.name).toList();
-    if (l.isEmpty) {
-      return;
-    }
-    Future.delayed(Duration(milliseconds: 500), () {
-      _storeManager.storePlugins(l as List<String>);
+    loadOrderedPlugins().then((plugins) {
+      if (mounted) setState(() => _plugins = plugins);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
+    final plugins = _plugins;
+    return ColoredBox(
+      color: DebugPanelColors.surface,
       child: SafeArea(
         bottom: false,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Container(
-              color: Colors.white,
-              height: 100,
-              width: MediaQuery.of(context).size.width,
-              alignment: Alignment.bottomLeft,
-              padding: const EdgeInsets.only(left: 16, right: 16),
-              margin: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+              child: Row(
                 children: <Widget>[
-                  Row(
-                    children: [
-                      InkWell(
-                          onTap: () {
-                            if (widget.closeAction != null) {
-                              widget.closeAction!();
-                            }
-                          },
-                          child: const CircleAvatar(
-                            radius: 10,
-                            backgroundColor: Color(0xffff5a52),
-                          )),
-                      const SizedBox(
-                        width: 8,
-                      ),
-                      InkWell(
-                          onTap: () {
-                            if (widget.minimalAction != null) {
-                              widget.minimalAction!();
-                            }
-                          },
-                          child: const CircleAvatar(
-                            radius: 10,
-                            backgroundColor: Color(0xffe6c029),
-                          )),
-                    ],
+                  const Icon(
+                    Icons.bug_report_rounded,
+                    size: 24,
+                    color: DebugPanelColors.accent,
                   ),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text('UME',
-                          style: const TextStyle(
-                              fontSize: 60,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xff454545))),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Debug panel',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: DebugPanelColors.text,
+                      ),
                     ),
+                  ),
+                  DebugPanelIconButton(
+                    icon: Icons.close_fullscreen_rounded,
+                    tooltip: 'Collapse',
+                    onPressed: widget.minimalAction,
+                  ),
+                  const SizedBox(width: 8),
+                  DebugPanelIconButton(
+                    icon: Icons.close_rounded,
+                    tooltip: 'Close',
+                    onPressed: widget.closeAction,
                   ),
                 ],
               ),
             ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                'Tap a tool to open it. Long-press and drag to reorder.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: DebugPanelColors.textMuted,
+                ),
+              ),
+            ),
             Expanded(
-                child: _dataList.isEmpty
-                    ? _EmptyPlaceholder()
-                    : DragableGridView(
-                        _dataList,
-                        childAspectRatio: 0.85,
-                        canAccept: (oldIndex, newIndex) {
-                          return true;
-                        },
+              child: plugins == null
+                  ? const SizedBox.shrink()
+                  : plugins.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No tools registered',
+                        style: TextStyle(color: DebugPanelColors.textMuted),
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: DragableGridView<Pluggable>(
+                        plugins,
+                        crossAxisCount: 3,
+                        childAspectRatio: 1,
                         dragCompletion: (dataList) {
-                          _saveData(dataList as List<Pluggable?>);
+                          final names = dataList.map((p) => p.name).toList();
+                          PluginStoreManager().storePlugins(names);
                         },
-                        itemBuilder: (context, dynamic data) {
-                          return GestureDetector(
-                            onTap: () {
-                              widget.action!(data);
-                              PluggableMessageService().resetCounter(data);
-                            },
-                            behavior: HitTestBehavior.opaque,
-                            child: _MenuCell(pluginData: data),
-                          );
-                        },
-                      ))
+                        itemBuilder: (context, plugin) => ToolTile(
+                          pluggable: plugin,
+                          iconBoxSize: 72,
+                          onTap: () => widget.action?.call(plugin),
+                        ),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
     );
-  }
-}
-
-class _EmptyPlaceholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text('Empty'),
-    );
-  }
-}
-
-class _MenuCell extends StatelessWidget {
-  const _MenuCell({Key? key, this.pluginData}) : super(key: key);
-
-  final Pluggable? pluginData;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color lineColor = Colors.grey.withOpacity(0.25);
-    return LayoutBuilder(builder: (_, constraints) {
-      return Material(
-        color: Colors.white,
-        child: Container(
-          child: Stack(
-            alignment: Alignment.center,
-            children: <Widget>[
-              Positioned(
-                  left: 0,
-                  top: 0,
-                  child: Container(
-                      height: constraints.maxHeight,
-                      width: 0.5,
-                      color: lineColor)),
-              Positioned(
-                  left: 0,
-                  top: 0,
-                  child: Container(
-                      height: 0.5,
-                      width: constraints.maxWidth,
-                      color: lineColor)),
-              Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Container(
-                      height: constraints.maxHeight,
-                      width: 0.5,
-                      color: lineColor)),
-              Positioned(
-                  bottom: 0,
-                  left: 0,
-                  child: Container(
-                      height: 0.5,
-                      width: constraints.maxWidth,
-                      color: lineColor)),
-              Container(
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Container(
-                        child: IconCache.icon(pluggableInfo: pluginData!),
-                        height: 40,
-                        width: 40),
-                    Container(
-                        margin: const EdgeInsets.only(top: 25),
-                        child: Text(pluginData!.displayName,
-                            style: const TextStyle(
-                                fontSize: 15, color: Colors.black)))
-                  ],
-                ),
-              ),
-              Positioned(
-                right: 12,
-                top: 12,
-                child: RedDot(
-                  pluginDatas: [pluginData],
-                  size: 22,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    });
   }
 }

@@ -2,165 +2,76 @@
 /// [Author] Alex (https://github.com/AlexV525)
 /// [Date] 2021/8/6 11:25
 ///
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:debug_panel_core/debug_panel_core.dart';
 
 import '../constants/extensions.dart';
 import '../instances.dart';
+import '../models/request_text.dart';
 import '../pluggable.dart';
 
-const JsonEncoder _encoder = JsonEncoder.withIndent('  ');
-
-ButtonStyle _buttonStyle(
-  BuildContext context, {
-  EdgeInsetsGeometry? padding,
-}) {
-  return TextButton.styleFrom(
-    padding: padding ?? const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-    minimumSize: Size.zero,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(999999),
-    ),
-    backgroundColor: Theme.of(context).primaryColor,
-    // [Original]: primary: Colors.white,
-    foregroundColor: Colors.white,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-}
+/// Longer bodies are cut on screen; copying always gives the full text.
+const int _maxShownChars = 20000;
 
 class DioPluggableState extends State<DioInspector> {
   @override
   void initState() {
     super.initState();
-    // Bind listener to refresh requests.
     InspectorInstance.httpContainer.addListener(_listener);
   }
 
   @override
   void dispose() {
-    InspectorInstance.httpContainer
-      ..removeListener(_listener) // First, remove refresh listener.
-      ..resetPaging(); // Then reset the paging field.
+    InspectorInstance.httpContainer.removeListener(_listener);
     super.dispose();
   }
 
-  /// Using [setState] won't cause too much performance regression,
-  /// since we've implemented the list with `findChildIndexCallback`.
   void _listener() {
+    // Requests can land mid-frame; rebuild on the next microtask instead.
     Future.microtask(() {
-      if (mounted &&
-          !context.debugDoingBuild &&
-          context.owner?.debugBuilding != true) {
-        setState(() {});
-      }
+      if (mounted) setState(() {});
     });
-  }
-
-  Widget _clearAllButton(BuildContext context) {
-    return TextButton(
-      onPressed: InspectorInstance.httpContainer.clearRequests,
-      style: _buttonStyle(
-        context,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 8,
-          vertical: 3,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const <Widget>[
-          Text('Clear'),
-          Icon(Icons.cleaning_services, size: 14),
-        ],
-      ),
-    );
-  }
-
-  Widget _itemList(BuildContext context) {
-    final List<Response<dynamic>> requests =
-        InspectorInstance.httpContainer.pagedRequests;
-    final int length = requests.length;
-    if (length > 0) {
-      return CustomScrollView(
-        slivers: <Widget>[
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (_, int index) {
-                final Response<dynamic> r = requests[index];
-                if (index == length - 2) {
-                  InspectorInstance.httpContainer.loadNextPage();
-                }
-                return _ResponseCard(
-                  key: ValueKey<int>(r.startTimeMilliseconds),
-                  response: r,
-                );
-              },
-              childCount: length,
-            ),
-          ),
-        ],
-      );
-    }
-    return const Center(
-      child: Text(
-        'Come back later...\n🧐',
-        style: TextStyle(fontSize: 28),
-        textAlign: TextAlign.center,
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final requests = InspectorInstance.httpContainer.requests;
+    final size = MediaQuery.sizeOf(context);
+    final padding = MediaQuery.paddingOf(context);
     return Material(
-      color: Colors.black26,
-      child: DefaultTextStyle.merge(
-        // [Original]: style: Theme.of(context).textTheme.bodyText2,
-        style: Theme.of(context).textTheme.bodyMedium,
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Container(
-            constraints: BoxConstraints.tightFor(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height / 1.25,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
+      color: Colors.black38,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: size.height * 0.85,
+          clipBehavior: Clip.antiAlias,
+          decoration: const BoxDecoration(
+            color: DebugPanelColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _Header(count: requests.length),
+              const Divider(height: 1),
+              Expanded(
+                child: requests.isEmpty
+                    ? const _EmptyState()
+                    : ListView.separated(
+                        padding: EdgeInsets.only(bottom: padding.bottom),
+                        itemCount: requests.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, int index) {
+                          final response = requests[index];
+                          return _RequestTile(
+                            key: ObjectKey(response),
+                            response: response,
+                          );
+                        },
+                      ),
               ),
-              color: Theme.of(context).cardColor,
-            ),
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    children: <Widget>[
-                      const Spacer(),
-                      Text(
-                        'Dio Requests',
-                        // [Original]: style: Theme.of(context).textTheme.subtitle1,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.centerEnd,
-                          child: _clearAllButton(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ColoredBox(
-                    color: Theme.of(context).canvasColor,
-                    child: _itemList(context),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -168,254 +79,330 @@ class DioPluggableState extends State<DioInspector> {
   }
 }
 
-class _ResponseCard extends StatefulWidget {
-  const _ResponseCard({
-    required Key? key,
-    required this.response,
-  }) : super(key: key);
+class _Header extends StatelessWidget {
+  const _Header({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+      child: Row(
+        children: <Widget>[
+          const Text(
+            'Network',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: DebugPanelColors.text,
+            ),
+          ),
+          const SizedBox(width: 8),
+          _Chip(label: '$count', color: DebugPanelColors.textMuted),
+          const Spacer(),
+          DebugPanelIconButton(
+            icon: Icons.delete_sweep_outlined,
+            tooltip: 'Clear',
+            onPressed: count == 0
+                ? null
+                : InspectorInstance.httpContainer.clearRequests,
+          ),
+          const SizedBox(width: 8),
+          const DebugPanelIconButton(
+            icon: Icons.close_rounded,
+            tooltip: 'Close',
+            onPressed: DebugPanel.closeActivatedPlugin,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.wifi_tethering, size: 48, color: DebugPanelColors.textMuted),
+          SizedBox(height: 12),
+          Text(
+            'No requests yet',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: DebugPanelColors.text,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Requests made through Dio show up here.',
+            style: TextStyle(fontSize: 13, color: DebugPanelColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestTile extends StatefulWidget {
+  const _RequestTile({super.key, required this.response});
 
   final Response<dynamic> response;
 
   @override
-  _ResponseCardState createState() => _ResponseCardState();
+  State<_RequestTile> createState() => _RequestTileState();
 }
 
-class _ResponseCardState extends State<_ResponseCard> {
-  final ValueNotifier<bool> _isExpanded = ValueNotifier<bool>(false);
+class _RequestTileState extends State<_RequestTile> {
+  late final RequestText _text = RequestText(widget.response);
+  bool _expanded = false;
+
+  Color get _statusColor {
+    final code = _text.statusCode;
+    if (code == null) return DebugPanelColors.danger;
+    if (code < 300) return DebugPanelColors.success;
+    if (code < 400) return DebugPanelColors.info;
+    if (code < 500) return DebugPanelColors.warning;
+    return DebugPanelColors.danger;
+  }
+
+  String get _subtitle {
+    final parts = <String>[_text.uri.host];
+    final start = widget.response.startTime;
+    if (start != null) parts.add(_hms(start));
+    final duration = widget.response.duration;
+    if (duration != null) parts.add('${duration.inMilliseconds} ms');
+    return parts.join('  ·  ');
+  }
 
   @override
-  void dispose() {
-    _isExpanded.dispose();
-    super.dispose();
-  }
-
-  void _switchExpand() {
-    _isExpanded.value = !_isExpanded.value;
-  }
-
-  Response<dynamic> get _response => widget.response;
-
-  RequestOptions get _request => _response.requestOptions;
-
-  /// The start time for the [_request].
-  DateTime get _startTime => _response.startTime;
-
-  /// The end time for the [_response].
-  DateTime get _endTime => _response.endTime;
-
-  /// The duration between the request and the response.
-  Duration get _duration => _endTime.difference(_startTime);
-
-  /// Status code for the [_response].
-  int get _statusCode => _response.statusCode ?? 0;
-
-  /// Colors matching status.
-  Color get _statusColor {
-    if (_statusCode >= 200 && _statusCode < 300) {
-      return Colors.lightGreen;
-    }
-    if (_statusCode >= 300 && _statusCode < 400) {
-      return Colors.orangeAccent;
-    }
-    if (_statusCode >= 400 && _statusCode < 500) {
-      return Colors.purple;
-    }
-    if (_statusCode >= 500 && _statusCode < 600) {
-      return Colors.red;
-    }
-    return Colors.blueAccent;
-  }
-
-  /// The method that the [_request] used.
-  String get _method => _request.method;
-
-  /// The [Uri] that the [_request] requested.
-  Uri get _requestUri => _request.uri;
-
-  String? get _requestHeadersBuilder {
-    final Map<String, List<String>> map = _request.headers.map(
-      (key, value) => MapEntry(
-        key,
-        value is Iterable ? value.map((v) => v.toString()).toList() : [value],
+  Widget build(BuildContext context) {
+    final uri = _text.uri;
+    final path =
+        '${uri.path.isEmpty ? '/' : uri.path}'
+        '${uri.hasQuery ? '?${uri.query}' : ''}';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _expanded ? const Color(0xFFF9FAFB) : DebugPanelColors.surface,
+        border: Border(
+          left: BorderSide(
+            color: _expanded ? DebugPanelColors.accent : Colors.transparent,
+            width: 3,
+          ),
+        ),
       ),
-    );
-    final Headers headers = Headers.fromMap(map);
-    if (headers.isEmpty) {
-      return null;
-    }
-    return '$headers';
-  }
-
-  /// Data for the [_request].
-  String? get _requestDataBuilder {
-    if (_request.data is Map) {
-      return _encoder.convert(_request.data);
-    }
-    return _request.data?.toString();
-  }
-
-  /// Data for the [_response].
-  String? get _responseDataBuilder {
-    final data = _response.data;
-    if (data == null) {
-      return null;
-    }
-    if (_response.data is Map) {
-      return _encoder.convert(_response.data);
-    }
-    return _response.data.toString();
-  }
-
-  String? get _responseHeadersBuilder {
-    if (_response.headers.isEmpty) {
-      return null;
-    }
-    return '${_response.headers}';
-  }
-
-  Widget _detailButton(BuildContext context) {
-    return TextButton(
-      onPressed: _switchExpand,
-      style: _buttonStyle(context),
-      child: const Text(
-        'Detail🔍',
-        style: TextStyle(fontSize: 12, height: 1.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            _Chip(
+                              label: _text.method,
+                              color: DebugPanelColors.accent,
+                            ),
+                            const SizedBox(width: 6),
+                            _Chip(
+                              label: _text.statusCode?.toString() ?? 'ERR',
+                              color: _statusColor,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          path,
+                          maxLines: _expanded ? null : 2,
+                          overflow: _expanded ? null : TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: DebugPanelColors.text,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _subtitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: DebugPanelColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DebugPanelCopyButton(
+                    tooltip: 'Copy request and response',
+                    icon: Icons.copy_all_rounded,
+                    color: DebugPanelColors.accent,
+                    text: () => _text.fullText,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: DebugPanelColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded) _Details(text: _text),
+        ],
       ),
     );
   }
+}
 
-  Widget _infoContent(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Text(_startTime.hms()),
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 5,
-            vertical: 1,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(3),
-            color: _statusColor,
-          ),
-          child: Text(
-            _statusCode.toString(),
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          _method,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(width: 6),
-        Text('${_duration.inMilliseconds}ms'),
-        const Spacer(),
-        _detailButton(context),
-      ],
-    );
-  }
+class _Details extends StatelessWidget {
+  const _Details({required this.text});
 
-  Widget _detailedContent(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _isExpanded,
-      builder: (_, bool value, __) {
-        if (!value) {
-          return const SizedBox.shrink();
-        }
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  final RequestText text;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = text.statusCode == null ? text.statusLabel() : null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
             children: <Widget>[
-              _TagText(
-                tag: 'Request headers',
-                content: _requestHeadersBuilder,
+              Expanded(
+                child: DebugPanelCopyAction(
+                  icon: Icons.copy_all_rounded,
+                  label: 'Copy all',
+                  text: () => text.fullText,
+                ),
               ),
-              _TagText(
-                tag: 'Request data',
-                content: _requestDataBuilder,
-              ),
-              _TagText(
-                tag: 'Response body',
-                content: _responseDataBuilder,
-              ),
-              _TagText(
-                tag: 'Response headers',
-                content: _responseHeadersBuilder,
+              const SizedBox(width: 8),
+              Expanded(
+                child: DebugPanelCopyAction(
+                  icon: Icons.terminal_rounded,
+                  label: 'Copy cURL',
+                  text: () => text.curl,
+                ),
               ),
             ],
           ),
-        );
-      },
+          if (error != null) _Section(title: 'Error', body: error),
+          _Section(title: 'URL', body: '${text.uri}'),
+          _Section(title: 'Request headers', body: text.requestHeaders),
+          _Section(title: 'Request body', body: text.requestBody),
+          _Section(title: 'Response headers', body: text.responseHeaders),
+          _Section(title: 'Response body', body: text.responseBody),
+        ],
+      ),
     );
   }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.body});
+
+  final String title;
+  final String? body;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      shadowColor: Theme.of(context).canvasColor,
-      elevation: 5,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _infoContent(context),
-            const SizedBox(height: 10),
-            _TagText(
-              tag: 'Uri',
-              content: '$_requestUri',
-              shouldStartFromNewLine: false,
+    final body = this.body;
+    if (body == null || body.isEmpty) return const SizedBox.shrink();
+    final truncated = body.length > _maxShownChars;
+    final shown = truncated
+        ? body.characters.take(_maxShownChars).toString()
+        : body;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: DebugPanelColors.text,
+                  ),
+                ),
+              ),
+              DebugPanelCopyButton(
+                tooltip: 'Copy $title',
+                text: () => body,
+                size: 18,
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: DebugPanelColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
             ),
-            _detailedContent(context),
-          ],
+            child: SelectableText(
+              truncated
+                  ? '$shown\n… '
+                        '(${body.length - shown.length} more characters, '
+                        'copy to get all)'
+                  : body,
+              style: debugPanelMonoStyle,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.3,
         ),
       ),
     );
   }
 }
 
-class _TagText extends StatelessWidget {
-  const _TagText({
-    Key? key,
-    required this.tag,
-    this.content,
-    this.shouldStartFromNewLine = true,
-  }) : super(key: key);
-
-  final String tag;
-  final String? content;
-  final bool shouldStartFromNewLine;
-
-  TextSpan get span {
-    return TextSpan(
-      children: <TextSpan>[
-        TextSpan(
-          text: '$tag: ',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        if (shouldStartFromNewLine) TextSpan(text: '\n'),
-        TextSpan(text: content!),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (content == null) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: SelectableText.rich(span),
-    );
-  }
-}
-
-extension _DateTimeExtension on DateTime {
-  String hms([String separator = ':']) => '$hour$separator'
-      '${'$minute'.padLeft(2, '0')}$separator'
-      '${'$second'.padLeft(2, '0')}';
-}
+String _hms(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:'
+    '${t.minute.toString().padLeft(2, '0')}:'
+    '${t.second.toString().padLeft(2, '0')}';
